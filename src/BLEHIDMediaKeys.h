@@ -2,7 +2,9 @@
 /**
  * BLEHIDMediaKeys.h
  * USB HID Consumer Page (0x0C) usage values.
- * Used with mediaTap() / mediaPress() / mediaRelease().
+ * Used with press(uint16_t) / release(uint16_t) / tap(uint16_t).
+ * The overloaded API automatically selects the consumer report
+ * when a uint16_t MEDIA_* constant is passed.
  *
  * These are 16-bit usage IDs sent via Report ID 0x02.
  * The HID descriptor declares Logical Maximum 0x3FF so all values

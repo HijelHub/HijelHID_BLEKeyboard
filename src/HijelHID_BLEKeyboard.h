@@ -37,6 +37,7 @@
 #include <NimBLEServer.h>
 #include <NimBLEHIDDevice.h>
 #include <NimBLECharacteristic.h>
+#include <string>
 #include "BLEHIDKeys.h"
 #include "BLEHIDMediaKeys.h"
 
@@ -77,27 +78,29 @@
 //   AD type+length overhead, leaving 29 bytes for the name string.
 //   Names longer than 29 chars are truncated; a warning prints in begin().
 //
-// Manufacturer: stored in the GATT Device Information service, not in the
-//   advertisement. No hard BLE limit, but beyond 64 chars wastes RAM.
-#define HID_MAX_DEVICE_NAME_LEN  29
-#define HID_MAX_MANUFACTURER_LEN 64
+// Manufacturer: stored in the GATT Device Information Service characteristic
+//   (UUID 0x2A29), read only after connection — not in the advertising packet.
+//   The Bluetooth Core Spec defines 512 bytes as the maximum GATT attribute
+//   length. Strings longer than 512 chars are truncated; a warning prints in begin().
+#define HID_MAX_DEVICE_NAME_LEN    29
+#define HID_MAX_MANUFACTURER_LEN  512
 
 // ─── Security Modes ────────────────────────────────────────────────────────
-enum BLEKeyboardSecurity {
-    BLE_KB_SEC_JUST_WORKS = 0,  // Auto-pair with no passcode (default)
-    BLE_KB_SEC_PASSKEY,         // Require a 6-digit passkey printed to Serial
+enum class BLEKeyboardSecurity : uint8_t {
+    JustWorks = 0,  // Auto-pair with no passcode (default)
+    Passkey,        // Require a 6-digit passkey printed to Serial
 };
 
 // ─── Debug Log Levels ──────────────────────────────────────────────────────
 // Pass one of these to setDebugLevel() before calling begin().
 //
-// HID_LOG_OFF     — no Serial output from the library (default)
-// HID_LOG_NORMAL  — connection, pairing, and advertising events
-// HID_LOG_VERBOSE — all of the above plus every HID report sent
-enum HIDLogLevel {
-    HID_LOG_OFF     = 0,
-    HID_LOG_NORMAL  = 1,
-    HID_LOG_VERBOSE = 2,
+// HIDLogLevel::Off     — no Serial output from the library (default)
+// HIDLogLevel::Normal  — connection, pairing, and advertising events
+// HIDLogLevel::Verbose — all of the above plus every HID report sent
+enum class HIDLogLevel : uint8_t {
+    Off     = 0,
+    Normal  = 1,
+    Verbose = 2,
 };
 
 // ─── Forward Declaration ───────────────────────────────────────────────────
@@ -132,32 +135,41 @@ class HijelHID_BLEKeyboard : public Print {
 public:
 
     // ─── Constructor ─────────────────────────────────────────────────────
+
     /**
-     * @param deviceName   BLE name shown to the host during pairing.
-     *                     Max 29 chars — longer names are truncated with a
-     *                     warning printed in begin(). Defaults to "HijelHID KB".
-     * @param manufacturer Manufacturer string in the GATT Device Info service.
-     *                     Max 64 chars. Defaults to "Hijel".
-     * @param batteryLevel Initial battery percentage (1–100).
-     *                     Values of 0 or >100 are clamped with a warning.
+     * Create a BLE HID keyboard.
+     *
+     * `deviceName` is the BLE name shown to the host during pairing (max 29 chars,
+     * longer names are truncated with a warning printed in `begin()`).
+     * Defaults to `"HijelHID KB"`.
+     *
+     * `manufacturer` is the manufacturer string in the GATT Device Info service
+     * (max 512 chars, the Bluetooth Core Spec GATT attribute limit).
+     * Defaults to `"Hijel"`.
+     *
+     * `batteryLevel` is the initial battery percentage (1–100).
+     * Values of 0 or >100 are clamped with a warning.
      */
     HijelHID_BLEKeyboard(const char* deviceName   = "HijelHID KB",
                          const char* manufacturer = "Hijel",
                          uint8_t     batteryLevel = 100);
 
     // ─── Debug ───────────────────────────────────────────────────────────
+
     /**
-     * Set the serial debug verbosity. Call before begin().
-     *   HID_LOG_OFF     — silent (default)
-     *   HID_LOG_NORMAL  — connection, pairing, and advertising events
-     *   HID_LOG_VERBOSE — all of the above plus every HID report sent
+     * Set the Serial debug verbosity. Call before `begin()`.
+     *
+     * `HIDLogLevel::Off` — silent (default).
+     * `HIDLogLevel::Normal` — connection, pairing, and advertising events.
+     * `HIDLogLevel::Verbose` — all of the above, plus every HID report sent.
      */
     void setDebugLevel(HIDLogLevel level);
 
     // ─── Lifecycle ───────────────────────────────────────────────────────
+
     /**
-     * Initialise BLE, create GATT services, and start advertising.
-     * Call once in setup(). Blocks until the NimBLE host task is ready.
+     * Initialise BLE, register GATT services, and start advertising.
+     * Call once in `setup()`. Blocks until the NimBLE host task is ready.
      */
     void begin();
 
@@ -167,53 +179,60 @@ public:
     void end();
 
     // ─── Connection State ────────────────────────────────────────────────
-    /** Returns true if a host is currently connected. */
+
+    /** Returns `true` if a host is currently connected. */
     bool isConnected() const;
 
-    /** Returns true if at least one bond is stored in NVS. */
+    /** Returns `true` if at least one bond is stored in NVS. */
     bool isBonded() const;
 
     /** Erase all stored bonds. Forces re-pairing on the next connection. */
     void clearBonds();
 
     // ─── Security ────────────────────────────────────────────────────────
+
     /**
-     * Set the pairing security mode. Must be called before begin().
-     *   BLE_KB_SEC_JUST_WORKS — auto-pair, no passcode (default)
-     *   BLE_KB_SEC_PASSKEY    — 6-digit passkey printed to Serial
+     * Set the pairing security mode. Must be called before `begin()`.
+     *
+     * `BLEKeyboardSecurity::JustWorks` — auto-pair, no passcode (default).
+     * `BLEKeyboardSecurity::Passkey` — require a 6-digit passkey printed to Serial.
      */
     void setSecurityMode(BLEKeyboardSecurity mode);
 
     /**
      * Optional callback fired when a passkey is generated (passkey mode only).
-     * @param cb  Function receiving the 6-digit passkey as uint32_t.
+     * `cb` receives the 6-digit passkey as `uint32_t`.
+     * Use this to display the passkey on your own hardware instead of Serial.
      */
     void onPassKey(void (*cb)(uint32_t passkey));
 
     /**
-     * Optional callback fired when pairing completes.
-     * @param cb  Function receiving true on success, false on failure.
+     * Optional callback fired when pairing completes or fails.
+     * `cb` receives `true` on success, `false` on failure.
      */
     void onPairingComplete(void (*cb)(bool success));
 
     // ─── Timing ──────────────────────────────────────────────────────────
+
     /**
-     * Set the global key hold time (how long a key is held before release).
-     * Default: HID_DEFAULT_TAP_DELAY_MS (25ms).
+     * Set the global key hold time in milliseconds (how long a key is held before release).
+     * Default: `HID_DEFAULT_TAP_DELAY_MS` (25 ms).
      * Increase if the host misses keypresses.
      */
     void setTapDelay(uint16_t ms);
 
     /**
-     * Set the global inter-key gap (delay after release before the next press).
-     * Default: HID_DEFAULT_KEY_GAP_MS (25ms).
+     * Set the global inter-key gap in milliseconds (delay after release before the next press).
+     * Default: `HID_DEFAULT_KEY_GAP_MS` (25 ms).
      * Increase if repeated or back-to-back keys are dropped by the host.
      */
     void setKeyGap(uint16_t ms);
 
     // ─── Battery ─────────────────────────────────────────────────────────
+
     /**
-     * Update the battery level reported to the host (1–100).
+     * Update the battery percentage reported to the host.
+     * Valid range is 1–100; values outside this range are clamped with a warning.
      */
     void setBatteryLevel(uint8_t level);
 
@@ -231,89 +250,92 @@ public:
     /**
      * Hold a keyboard key down (sends a key-down report immediately).
      * Supports up to 6 simultaneous non-modifier keys (6KRO).
-     * You are responsible for calling release() or releaseAll() afterwards,
-     * and for adding appropriate delays between press/release calls.
+     * You must call `release()` or `releaseAll()` afterwards, with appropriate delays.
      *
-     * @param keycode   HID keycode from BLEHIDKeys.h (KEY_*)
-     * @param modifiers Optional modifier bitmask (KEY_MOD_* values OR'd together)
+     * `keycode` is a `KEY_*` constant from `BLEHIDKeys.h`.
+     * `modifiers` is an optional bitmask of `KEY_MOD_*` values OR'd together.
+     * For media keys use `press(uint16_t usageId)` with a `MEDIA_*` constant from `BLEHIDMediaKeys.h`.
      */
     void press(uint8_t keycode, uint8_t modifiers = 0);
 
     /**
      * Hold a consumer/media key down (sends a consumer report immediately).
-     * You are responsible for calling release() afterwards, and for adding
-     * appropriate delays between press/release calls.
+     * You must call `release()` or `releaseAll()` afterwards, with appropriate delays.
      *
-     * @param usageId  16-bit Consumer Page usage ID from BLEHIDMediaKeys.h (MEDIA_*)
+     * `usageId` is a `MEDIA_*` constant from `BLEHIDMediaKeys.h`.
+     * For keyboard keys use `press(uint8_t keycode)` with a `KEY_*` constant from `BLEHIDKeys.h`.
      */
     void press(uint16_t usageId);
 
     /**
      * Release a previously pressed keyboard key.
-     * Passing KEY_NONE (0x00) calls releaseAll().
+     * Passing `KEY_NONE` (0x00) calls `releaseAll()`.
      *
-     * @param keycode  HID keycode to release
+     * `keycode` is the same `KEY_*` value passed to `press()`.
      */
     void release(uint8_t keycode);
 
     /**
      * Release a previously pressed consumer/media key (sends usage ID 0x0000).
      *
-     * @param usageId  The same MEDIA_* value passed to press()
+     * `usageId` is the same `MEDIA_*` value passed to `press()`.
      */
     void release(uint16_t usageId);
 
     /**
      * Release all held keyboard keys, modifiers, and any active consumer key.
      * Sends both a zeroed keyboard report and a zeroed consumer report.
+     * Safe to call at any time to clear stuck keys.
      */
     void releaseAll();
 
     /**
      * Press and release a keyboard key in one call.
      *
-     * Uses the global tap delay and key gap by default (set via setTapDelay()
-     * and setKeyGap()). Override per-call with delayMs and keyGap when a
-     * specific key needs different timing from the global defaults.
-     *
-     * @param keycode   HID keycode from BLEHIDKeys.h (KEY_*)
-     * @param modifiers Optional modifier bitmask (KEY_MOD_* values OR'd together)
-     * @param delayMs   Hold time in ms (default: HID_DEFAULT_TAP_DELAY_MS)
-     * @param keyGap    Post-release gap in ms (default: HID_DEFAULT_KEY_GAP_MS)
+     * `keycode` is a `KEY_*` constant from `BLEHIDKeys.h`.
+     * `modifiers` is an optional bitmask of `KEY_MOD_*` values OR'd together.
+     * `delayMs` overrides the global hold time for this tap only (0 = use `setTapDelay()` value).
+     * `keyGap` overrides the global post-release gap for this tap only (0 = use `setKeyGap()` value).
+     * For media keys use `tap(uint16_t usageId)` with a `MEDIA_*` constant from `BLEHIDMediaKeys.h`.
      */
     void tap(uint8_t keycode, uint8_t modifiers = 0,
-             uint16_t delayMs = HID_DEFAULT_TAP_DELAY_MS,
-             uint16_t keyGap  = HID_DEFAULT_KEY_GAP_MS);
+             uint16_t delayMs = 0, uint16_t keyGap = 0);
 
     /**
      * Press and release a consumer/media key in one call.
      *
-     * @param usageId  16-bit Consumer Page usage ID from BLEHIDMediaKeys.h (MEDIA_*)
-     * @param delayMs  Hold time in ms (default: HID_DEFAULT_TAP_DELAY_MS)
-     * @param keyGap   Post-release gap in ms (default: HID_DEFAULT_KEY_GAP_MS)
+     * `usageId` is a `MEDIA_*` constant from `BLEHIDMediaKeys.h`.
+     * `delayMs` overrides the global hold time for this tap only (0 = use `setTapDelay()` value).
+     * `keyGap` overrides the global post-release gap for this tap only (0 = use `setKeyGap()` value).
+     * For keyboard keys use `tap(uint8_t keycode)` with a `KEY_*` constant from `BLEHIDKeys.h`.
      */
     void tap(uint16_t usageId,
-             uint16_t delayMs = HID_DEFAULT_TAP_DELAY_MS,
-             uint16_t keyGap  = HID_DEFAULT_KEY_GAP_MS);
+             uint16_t delayMs = 0, uint16_t keyGap = 0);
 
     // ─── String Output ───────────────────────────────────────────────────
+
     /**
-     * Type one ASCII character. Implements Arduino Print::write().
-     * Translates ASCII to the correct HID keycode and modifier automatically.
-     * Supports printable ASCII (0x20–0x7E) and control chars \n, \r, \t, BS, ESC.
-     *
-     * Use print() / println() to send strings — they call write() per character.
+     * Type one ASCII character. Implements `Arduino Print::write()`.
+     * Translates the character to the correct `KEY_*` keycode and modifier automatically.
+     * Supports printable ASCII (0x20–0x7E) and control chars `\n`, `\r`, `\t`, BS, ESC.
+     * Use `print()` / `println()` to send full strings — they call `write()` per character.
      */
     size_t write(uint8_t c) override;
 
     // ─── LED State (from host) ────────────────────────────────────────────
-    bool isNumLockOn()    const;  ///< True if Num Lock LED is active on the host
-    bool isCapsLockOn()   const;  ///< True if Caps Lock LED is active on the host
-    bool isScrollLockOn() const;  ///< True if Scroll Lock LED is active on the host
+
+    /** Returns `true` if the Num Lock LED is active on the host. */
+    bool isNumLockOn()    const;
+
+    /** Returns `true` if the Caps Lock LED is active on the host. */
+    bool isCapsLockOn()   const;
+
+    /** Returns `true` if the Scroll Lock LED is active on the host. */
+    bool isScrollLockOn() const;
 
     /**
      * Optional callback fired when the host changes the keyboard LED state.
-     * @param cb  Function receiving the raw LED bitmask byte (HID_LED_* values).
+     * `cb` receives the raw LED bitmask byte (`HID_LED_*` values).
      */
     void onLEDChange(void (*cb)(uint8_t leds));
 
@@ -327,14 +349,13 @@ public:
 
 private:
     // ── Configuration ─────────────────────────────────────────────────────
-    // Device name and manufacturer are copied into owned buffers in the
-    // constructor so the library never holds a dangling pointer to the
-    // caller's string (which may be a temporary or go out of scope before
-    // begin() is called).
-    char                _deviceNameBuf[HID_MAX_DEVICE_NAME_LEN + 1];
-    char                _manufacturerBuf[HID_MAX_MANUFACTURER_LEN + 1];
-    const char*         _deviceName;    // always points to _deviceNameBuf
-    const char*         _manufacturer;  // always points to _manufacturerBuf
+    // std::string owns its storage — no fixed buffers, no aliasing pointers.
+    // Device name is enforced to HID_MAX_DEVICE_NAME_LEN in the constructor
+    // because the BLE advertising packet has a hard 29-byte limit.
+    // Manufacturer is enforced to HID_MAX_MANUFACTURER_LEN (512 bytes),
+    // the maximum GATT attribute length per the Bluetooth Core Spec.
+    std::string         _deviceName;
+    std::string         _manufacturer;
     uint8_t             _batteryLevel;
     BLEKeyboardSecurity _secMode;
     uint16_t            _tapDelay;
@@ -349,9 +370,12 @@ private:
     bool _batClamped;     // battery level was 0 or >100
 
     // ── Runtime State ─────────────────────────────────────────────────────
-    bool    _connected;
-    uint8_t _ledState;
-    uint8_t _keyReport[HID_KEYBOARD_REPORT_SIZE];  // [mod][0x00][k0..k5]
+    bool     _connected;
+    uint8_t  _ledState;
+    uint8_t  _keyReport[HID_KEYBOARD_REPORT_SIZE];  // [mod][0x00][k0..k5]
+    bool     _consumerActive;  // true while a consumer/media key is held down
+    uint32_t _lastReportMs;   // millis() of last successful notify — used to detect host-side
+                              // selective suspend (Windows drops first packet after ~2s idle)
 
     // ── User Callbacks ────────────────────────────────────────────────────
     void (*_cbPassKey)(uint32_t);
@@ -373,7 +397,7 @@ private:
     bool    _isModifier(uint8_t keycode);
     uint8_t _keycodeToModBit(uint8_t keycode);
 
-    // Logging helpers — produce no code when log level is HID_LOG_OFF
+    // Logging helpers — produce no code when log level is HIDLogLevel::Off
     void _logN(const char* msg);
     void _logNf(const char* fmt, ...);
     void _logV(const char* msg);

@@ -224,29 +224,27 @@ void _HijelKBLEDCallbacks::onWrite(NimBLECharacteristic* pChar, NimBLEConnInfo& 
 
 // ─── Constructor ──────────────────────────────────────────────────────────
 //
-// All constructor arguments are validated here at construction time.
-// Warnings for out-of-range values are deferred to begin() so they print
-// after Serial.begin() has been called.
+// deviceName   — stored as std::string. Truncated to HID_MAX_DEVICE_NAME_LEN
+//                if longer (hard BLE advertising packet limit). Null/empty
+//                falls back to "HijelHID KB".
 //
-// deviceName   — copied into an owned buffer (max HID_MAX_DEVICE_NAME_LEN
-//                chars). Longer names are truncated. Null/empty falls back
-//                to "HijelHID KB".
-//
-// manufacturer — copied into an owned buffer (max HID_MAX_MANUFACTURER_LEN
-//                chars). Stored in the GATT Device Info service, not in the
-//                advertisement packet. Null/empty falls back to "Hijel".
+// manufacturer — stored as std::string. Truncated to HID_MAX_MANUFACTURER_LEN
+//                (512 bytes) if longer (Bluetooth Core Spec GATT attribute
+//                maximum). Null/empty falls back to "Hijel".
 //
 // batteryLevel — clamped to 1–100. 0 is not a valid battery percentage.
 
 HijelHID_BLEKeyboard::HijelHID_BLEKeyboard(const char* deviceName,
                                             const char* manufacturer,
                                             uint8_t     batteryLevel)
-    : _secMode(BLE_KB_SEC_JUST_WORKS),
+    : _secMode(BLEKeyboardSecurity::JustWorks),
       _tapDelay(HID_DEFAULT_TAP_DELAY_MS),
       _keyGap(HID_DEFAULT_KEY_GAP_MS),
-      _logLevel(HID_LOG_OFF),
+      _logLevel(HIDLogLevel::Off),
       _connected(false),
       _ledState(0),
+      _consumerActive(false),
+      _lastReportMs(0),
       _nameTruncated(false),
       _mfrTruncated(false),
       _batClamped(false),
@@ -261,31 +259,25 @@ HijelHID_BLEKeyboard::HijelHID_BLEKeyboard(const char* deviceName,
 {
     memset(_keyReport, 0, sizeof(_keyReport));
 
-    // Device name — copy into owned buffer, truncate if necessary
-    const char* safeName = (deviceName != nullptr && deviceName[0] != '\0')
-                           ? deviceName : "HijelHID KB";
-    size_t nameLen = strlen(safeName);
-    if (nameLen > HID_MAX_DEVICE_NAME_LEN) {
-        nameLen = HID_MAX_DEVICE_NAME_LEN;
+    // Device name — store in std::string, truncate if it exceeds the BLE
+    // advertising packet limit of 29 bytes.
+    _deviceName = (deviceName != nullptr && deviceName[0] != '\0')
+                  ? deviceName : "HijelHID KB";
+    if (_deviceName.length() > HID_MAX_DEVICE_NAME_LEN) {
+        _deviceName.resize(HID_MAX_DEVICE_NAME_LEN);
         _nameTruncated = true;
     }
-    strncpy(_deviceNameBuf, safeName, nameLen);
-    _deviceNameBuf[nameLen] = '\0';
-    _deviceName = _deviceNameBuf;
 
-    // Manufacturer — copy into owned buffer, truncate if necessary
-    const char* safeMfr = (manufacturer != nullptr && manufacturer[0] != '\0')
-                          ? manufacturer : "Hijel";
-    size_t mfrLen = strlen(safeMfr);
-    if (mfrLen > HID_MAX_MANUFACTURER_LEN) {
-        mfrLen = HID_MAX_MANUFACTURER_LEN;
+    // Manufacturer — store in std::string, truncate if it exceeds the Bluetooth
+    // Core Spec GATT attribute maximum of HID_MAX_MANUFACTURER_LEN (512 bytes).
+    _manufacturer = (manufacturer != nullptr && manufacturer[0] != '\0')
+                    ? manufacturer : "Hijel";
+    if (_manufacturer.length() > HID_MAX_MANUFACTURER_LEN) {
+        _manufacturer.resize(HID_MAX_MANUFACTURER_LEN);
         _mfrTruncated = true;
     }
-    strncpy(_manufacturerBuf, safeMfr, mfrLen);
-    _manufacturerBuf[mfrLen] = '\0';
-    _manufacturer = _manufacturerBuf;
 
-    // Battery level — clamp to valid range 1–100
+    // Battery level — clamp to valid range 1–100.
     if (batteryLevel == 0) {
         _batteryLevel = 1;
         _batClamped   = true;
@@ -304,40 +296,52 @@ void HijelHID_BLEKeyboard::setDebugLevel(HIDLogLevel level) {
 }
 
 void HijelHID_BLEKeyboard::_logN(const char* msg) {
-    if (_logLevel >= HID_LOG_NORMAL) {
+    if (_logLevel >= HIDLogLevel::Normal) {
         Serial.print("[HijelHID] ");
         Serial.println(msg);
     }
 }
 
 void HijelHID_BLEKeyboard::_logNf(const char* fmt, ...) {
-    if (_logLevel >= HID_LOG_NORMAL) {
-        char buf[128];
-        va_list args;
+    if (_logLevel >= HIDLogLevel::Normal) {
+        // Two-pass: measure exact size needed, then allocate precisely that
+        // on the stack with alloca (a pointer adjustment — no heap involvement).
+        va_list args, args2;
         va_start(args, fmt);
-        vsnprintf(buf, sizeof(buf), fmt, args);
+        va_copy(args2, args);
+        int needed = vsnprintf(nullptr, 0, fmt, args);
         va_end(args);
-        Serial.print("[HijelHID] ");
-        Serial.println(buf);
+        if (needed > 0) {
+            char* buf = static_cast<char*>(alloca(needed + 1));
+            vsnprintf(buf, needed + 1, fmt, args2);
+            Serial.print("[HijelHID] ");
+            Serial.println(buf);
+        }
+        va_end(args2);
     }
 }
 
 void HijelHID_BLEKeyboard::_logV(const char* msg) {
-    if (_logLevel >= HID_LOG_VERBOSE) {
+    if (_logLevel >= HIDLogLevel::Verbose) {
         Serial.print("[HijelHID VERBOSE] ");
         Serial.println(msg);
     }
 }
 
 void HijelHID_BLEKeyboard::_logVf(const char* fmt, ...) {
-    if (_logLevel >= HID_LOG_VERBOSE) {
-        char buf[128];
-        va_list args;
+    if (_logLevel >= HIDLogLevel::Verbose) {
+        va_list args, args2;
         va_start(args, fmt);
-        vsnprintf(buf, sizeof(buf), fmt, args);
+        va_copy(args2, args);
+        int needed = vsnprintf(nullptr, 0, fmt, args);
         va_end(args);
-        Serial.print("[HijelHID VERBOSE] ");
-        Serial.println(buf);
+        if (needed > 0) {
+            char* buf = static_cast<char*>(alloca(needed + 1));
+            vsnprintf(buf, needed + 1, fmt, args2);
+            Serial.print("[HijelHID VERBOSE] ");
+            Serial.println(buf);
+        }
+        va_end(args2);
     }
 }
 
@@ -348,11 +352,11 @@ void HijelHID_BLEKeyboard::begin() {
     // Print any deferred constructor warnings now that Serial is running
     if (_nameTruncated) {
         Serial.printf("[HijelHID] WARNING: Device name too long, truncated to %d chars: \"%s\"\n",
-                      HID_MAX_DEVICE_NAME_LEN, _deviceName);
+                      HID_MAX_DEVICE_NAME_LEN, _deviceName.c_str());
     }
     if (_mfrTruncated) {
-        Serial.printf("[HijelHID] WARNING: Manufacturer string too long, truncated to %d chars: \"%s\"\n",
-                      HID_MAX_MANUFACTURER_LEN, _manufacturer);
+        Serial.printf("[HijelHID] WARNING: Manufacturer string too long, truncated to %d chars.\n",
+                      HID_MAX_MANUFACTURER_LEN);
     }
     if (_batClamped) {
         Serial.printf("[HijelHID] WARNING: Battery level out of range (1-100), clamped to %d%%.\n",
@@ -360,7 +364,7 @@ void HijelHID_BLEKeyboard::begin() {
     }
 
     _logN("Initialising NimBLE stack...");
-    NimBLEDevice::init(_deviceName);
+    NimBLEDevice::init(_deviceName.c_str());
 
     // Block until the NimBLE host task is fully ready.
     // Required on ESP32 Arduino Core 3.3.7+ with NimBLE-Arduino 2.3.8+.
@@ -376,7 +380,7 @@ void HijelHID_BLEKeyboard::begin() {
     _logN("NimBLE stack ready.");
 
     // Configure security
-    if (_secMode == BLE_KB_SEC_PASSKEY) {
+    if (_secMode == BLEKeyboardSecurity::Passkey) {
         _logN("Security: Passkey");
         NimBLEDevice::setSecurityAuth(BLE_SM_PAIR_AUTHREQ_BOND |
                                       BLE_SM_PAIR_AUTHREQ_MITM |
@@ -397,7 +401,7 @@ void HijelHID_BLEKeyboard::begin() {
     // Create HID device and configure its metadata
     _logN("Creating HID device...");
     _pHID = new NimBLEHIDDevice(_pServer);
-    _pHID->setManufacturer(_manufacturer);
+    _pHID->setManufacturer(_manufacturer.c_str());
     // PnP ID: source=USB-IF (0x02), VID=Espressif (0xE502), PID=0x0001, version=0x0100
     _pHID->setPnp(0x02, 0xE502, 0x0001, 0x0100);
     // HID info: country=0 (not localised), flags=0x01 (normally connectable)
@@ -420,6 +424,10 @@ void HijelHID_BLEKeyboard::begin() {
     _logN("Starting HID services...");
     _pHID->startServices();
 
+    // Seed the Arduino PRNG with hardware entropy so passkeys generated by
+    // _onPassKeyDisplay() are not deterministic across reboots.
+    randomSeed(esp_random());
+
     // Configure and start advertising
     _logN("Configuring advertising...");
     NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
@@ -434,12 +442,12 @@ void HijelHID_BLEKeyboard::begin() {
     // Include device name in scan response so it appears correctly in
     // Bluetooth settings on all hosts (particularly Android).
     NimBLEAdvertisementData scanResponse;
-    scanResponse.setName(_deviceName);
+    scanResponse.setName(_deviceName.c_str());
     pAdv->setScanResponseData(scanResponse);
 
     NimBLEDevice::startAdvertising();
     _logNf("Advertising as \"%s\". Tap delay: %dms, key gap: %dms.",
-           _deviceName, _tapDelay, _keyGap);
+           _deviceName.c_str(), _tapDelay, _keyGap);
 }
 
 // ─── end() ────────────────────────────────────────────────────────────────
@@ -488,13 +496,21 @@ void HijelHID_BLEKeyboard::setBatteryLevel(uint8_t level) {
     if (level == 0) {
         _logN("WARNING: Battery level 0 is invalid, clamping to 1.");
         level = 1;
+        _batClamped = true;
     } else if (level > 100) {
         _logNf("WARNING: Battery level %d out of range, clamping to 100.", level);
         level = 100;
+        _batClamped = true;
+    } else {
+        _batClamped = false;
     }
     _batteryLevel = level;
     if (_pHID != nullptr) {
         _pHID->setBatteryLevel(level, true);
+        // Give the host a full connection interval to ACK the battery notification
+        // before any key reports follow. Without this gap, a key report fired
+        // immediately after the battery notify can lose the ACL buffer race.
+        if (_connected) delay(30);
         _logNf("Battery level set to %d%%.", level);
     }
 }
@@ -536,6 +552,7 @@ void HijelHID_BLEKeyboard::release(uint8_t keycode) {
 void HijelHID_BLEKeyboard::press(uint16_t usageId) {
     if (!_connected) return;
     _logVf("press(consumer 0x%04X)", usageId);
+    _consumerActive = true;
     _sendConsumerReport(usageId);
 }
 
@@ -543,6 +560,7 @@ void HijelHID_BLEKeyboard::release(uint16_t usageId) {
     (void)usageId;  // parameter kept for API symmetry; consumer release always sends 0x0000
     if (!_connected) return;
     _logV("release(consumer)");
+    _consumerActive = false;
     _sendConsumerReport(0x0000);
 }
 
@@ -553,13 +571,21 @@ void HijelHID_BLEKeyboard::releaseAll() {
     memset(_keyReport, 0, sizeof(_keyReport));
     _logV("releaseAll()");
     _sendKeyReport();
-    _sendConsumerReport(0x0000);
+    // Only send the consumer zero-report if a consumer key is actually held.
+    // Sending an unnecessary consumer notify after every keyboard tap adds a
+    // spurious notify() call that can interfere with the next keyboard report.
+    if (_consumerActive) {
+        _consumerActive = false;
+        _sendConsumerReport(0x0000);
+    }
 }
 
 // ─── Tap ──────────────────────────────────────────────────────────────────
 
 void HijelHID_BLEKeyboard::tap(uint8_t keycode, uint8_t modifiers,
                                 uint16_t delayMs, uint16_t keyGap) {
+    if (delayMs == 0) delayMs = _tapDelay;
+    if (keyGap  == 0) keyGap  = _keyGap;
     press(keycode, modifiers);
     delay(delayMs);
     // Use releaseAll() rather than release() to guarantee the modifier byte is
@@ -572,6 +598,8 @@ void HijelHID_BLEKeyboard::tap(uint8_t keycode, uint8_t modifiers,
 
 void HijelHID_BLEKeyboard::tap(uint16_t usageId,
                                 uint16_t delayMs, uint16_t keyGap) {
+    if (delayMs == 0) delayMs = _tapDelay;
+    if (keyGap  == 0) keyGap  = _keyGap;
     press(usageId);
     delay(delayMs);
     release(usageId);
@@ -584,10 +612,10 @@ size_t HijelHID_BLEKeyboard::write(uint8_t c) {
     if (!_connected) return 0;
 
     // Handle ASCII control characters explicitly
-    if (c == '\n' || c == '\r') { tap(KEY_RETURN,    0, _tapDelay, _keyGap); return 1; }
-    if (c == '\t')               { tap(KEY_TAB,       0, _tapDelay, _keyGap); return 1; }
-    if (c == 0x08)               { tap(KEY_BACKSPACE, 0, _tapDelay, _keyGap); return 1; }
-    if (c == 0x1B)               { tap(KEY_ESCAPE,    0, _tapDelay, _keyGap); return 1; }
+    if (c == '\n' || c == '\r') { tap(KEY_RETURN);    return 1; }
+    if (c == '\t')               { tap(KEY_TAB);       return 1; }
+    if (c == 0x08)               { tap(KEY_BACKSPACE); return 1; }
+    if (c == 0x1B)               { tap(KEY_ESCAPE);    return 1; }
 
     // Printable ASCII 0x20–0x7E — look up keycode and modifier from tables
     if (c >= 0x20 && c <= 0x7E) {
@@ -596,7 +624,7 @@ size_t HijelHID_BLEKeyboard::write(uint8_t c) {
         uint8_t modifier = _modTable[idx];
         if (keycode != 0) {
             _logVf("write('%c') -> keycode=0x%02X mod=0x%02X", c, keycode, modifier);
-            tap(keycode, modifier, _tapDelay, _keyGap);
+            tap(keycode, modifier);
             return 1;
         }
     }
@@ -624,6 +652,8 @@ void HijelHID_BLEKeyboard::_onDisconnect() {
     _connected = false;
     memset(_keyReport, 0, sizeof(_keyReport));
     _ledState = 0;
+    _consumerActive = false;
+    _lastReportMs = 0;  // force wakeup prime on next report after reconnect
     _logN("Host disconnected. Restarting advertising...");
 }
 
@@ -637,7 +667,7 @@ void HijelHID_BLEKeyboard::_onAuthComplete(bool success) {
 }
 
 uint32_t HijelHID_BLEKeyboard::_onPassKeyDisplay() {
-    uint32_t passkey = random(100000, 999999);
+    uint32_t passkey = random(100000, 1000000);
     _logNf("Passkey: %06lu", (unsigned long)passkey);
     if (_cbPassKey) _cbPassKey(passkey);
     return passkey;
@@ -664,8 +694,26 @@ void HijelHID_BLEKeyboard::_sendKeyReport() {
            _keyReport[0],
            _keyReport[2], _keyReport[3], _keyReport[4],
            _keyReport[5], _keyReport[6], _keyReport[7]);
+
+    // Windows selectively suspends idle BLE HID devices after ~2 seconds of
+    // inactivity. When suspended, the first notify() triggers a USB remote
+    // wakeup — but Windows drops that first packet as part of the resume
+    // handshake. The workaround: if we have been idle long enough that the
+    // host may have suspended the device, send one silent all-zeros report
+    // first. That report absorbs the drop, and the real report follows
+    // immediately once the host is awake and listening.
+    if ((millis() - _lastReportMs) > 800) {
+        uint8_t empty[HID_KEYBOARD_REPORT_SIZE] = {};
+        _pKeyboardInput->setValue(empty, HID_KEYBOARD_REPORT_SIZE);
+        _pKeyboardInput->notify();
+        delay(50);  // give the host time to fully resume before the real report
+    }
+
     _pKeyboardInput->setValue(_keyReport, HID_KEYBOARD_REPORT_SIZE);
-    _pKeyboardInput->notify();
+    while (!_pKeyboardInput->notify() && _connected) {
+        vTaskDelay(1);
+    }
+    _lastReportMs = millis();
 }
 
 void HijelHID_BLEKeyboard::_sendConsumerReport(uint16_t usageId) {
@@ -674,8 +722,21 @@ void HijelHID_BLEKeyboard::_sendConsumerReport(uint16_t usageId) {
     report[0] = (uint8_t)(usageId & 0xFF);
     report[1] = (uint8_t)(usageId >> 8);
     _logVf("consumerReport: 0x%04X", usageId);
+
+    // Windows selectively suspends idle BLE HID devices after ~2 seconds.
+    // Same wakeup-prime workaround as _sendKeyReport() — see comments there.
+    if ((millis() - _lastReportMs) > 800) {
+        uint8_t empty[HID_CONSUMER_REPORT_SIZE] = {};
+        _pConsumerInput->setValue(empty, HID_CONSUMER_REPORT_SIZE);
+        _pConsumerInput->notify();
+        delay(50);  // give the host time to fully resume before the real report
+    }
+
     _pConsumerInput->setValue(report, HID_CONSUMER_REPORT_SIZE);
-    _pConsumerInput->notify();
+    while (!_pConsumerInput->notify() && _connected) {
+        vTaskDelay(1);
+    }
+    _lastReportMs = millis();
 }
 
 bool HijelHID_BLEKeyboard::_addKeycode(uint8_t keycode) {
