@@ -138,7 +138,7 @@ void setup() {
 
     // ── Security configuration ───────────────────────────────────────────
     // Must be called before begin().
-    keyboard.setSecurityMode(BLE_KB_SEC_PASSKEY);
+    keyboard.setSecurityMode(BLEKeyboardSecurity::Passkey);
 
     // Register the passkey callback — fired when the library generates a
     // 6-digit passkey for the host to enter.
@@ -150,7 +150,7 @@ void setup() {
 
     // Optional: enable Normal logging so connection events print to Serial.
     // Use HID_LOG_VERBOSE to also see every HID report sent.
-    keyboard.setDebugLevel(HID_LOG_NORMAL);
+    keyboard.setDebugLevel(HIDLogLevel::Normal);
 
     // ── Start BLE ────────────────────────────────────────────────────────
     keyboard.begin();
@@ -197,7 +197,8 @@ void loop() {
     if (keyboard.isConnected() && !pairingInProgress) {
         if (millis() - lastDemo >= DEMO_INTERVAL_MS) {
             lastDemo = millis();
-
+            
+            // open a text editor on the host. you have 10 seconds
             Serial.println("[Demo] Sending keystrokes...");
 
             // Type a short string

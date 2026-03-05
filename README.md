@@ -44,8 +44,7 @@ An ESP32 board/module with BLE [ *All except ESP32-S2 and ESP32-P4* ]
 
 ## Installation
 
-
-[![Latest Release](https://img.shields.io/github/v/release/HijelHub/HijelHID_BLEKeyboard.svg?label=Latest%20Release&color=blue&style=plastic)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/HijelHub/HijelHID_BLEKeyboard?label=Latest%20Release&color=blue&style=plastic)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
 
 1. Download the [Latest Release](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
 2. In Arduino IDE: `Sketch → Include Library → Add .ZIP Library`
@@ -66,8 +65,9 @@ void setup() {
 
 void loop() {
     if (keyboard.isConnected()) {
-        keyboard.println("Hello, World!");
+        keyboard.print("Hello, ");
         keyboard.tap(KEY_RETURN);
+        keyboard.println("World!")
         delay(5000);
     }
 }
@@ -75,9 +75,29 @@ void loop() {
 
 ---
 
-## <sub><img width="30" height="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/code.svg"></sub> API Reference
+## <a name="api-reference"></a><sub><img width="30" height="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/code.svg"></sub> API Reference
 
-### Constructor
+<details>
+<summary>API INDEX</summary>
+
+* [Constructor](#constructor)
+* [Setup](#setup)
+* [Connection](#connection)
+* [Typing Text](#typing-text)
+* [Tapping Keys](#tapping-keys)
+* [Pressing Keys](#pressing-keys)
+* [Media / Consumer Keys](#media--consumer-keys)
+* [Timing](#timing)
+* [Battery Level](#battery-level)
+* [Security / Pairing](#security--pairing)
+* [LED State](#led-state)
+* [Debug Logging](#debug-logging)
+
+</details>
+
+---
+
+### <a name="constructor"></a>Constructor
 
 Create a keyboard object with an optional custom name, manufacturer, and battery level.
 
@@ -92,12 +112,14 @@ HijelHID_BLEKeyboard keyboard("My Keyboard", "My Company", 100);
 | Parameter | Description | Default |
 |---|---|---|
 | `deviceName` | Name shown to the host when pairing. Max 29 chars. | `"HijelHID KB"` |
-| `manufacturer` | Manufacturer name. Max 64 chars. | `"Hijel"` |
+| `manufacturer` | Manufacturer name. Max 512 chars. | `"Hijel"` |
 | `batteryLevel` | Starting battery level (1–100). | `100` |
+
+[[Top]](#api-reference)
 
 ---
 
-### Setup
+### <a name="setup"></a>Setup 
 
 Call `begin()` once in `setup()` to start BLE advertising. The device will be discoverable and ready to pair.
 
@@ -113,9 +135,11 @@ Call `end()` to stop BLE and disconnect.
 keyboard.end();
 ```
 
+[[Top]](#api-reference)
+
 ---
 
-### Connection
+### <a name="connection"></a>Connection
 
 Check whether a host is connected before sending keys.
 
@@ -127,10 +151,11 @@ void loop() {
     }
 }
 ```
+[[Top]](#api-reference)
 
 ---
 
-### Typing Text
+### <a name="typing-text"></a>Typing Text
 
 `print()` and `println()` type a string of characters. Upper case, punctuation, and spaces are handled automatically. `println()` adds a newline at the end.
 
@@ -149,11 +174,13 @@ for (int i = 0; str[i] != '\0'; i++) {
 keyboard.tap(KEY_RETURN);
 ```
 
+[[Top]](#api-reference)
+
 ---
 
-### Tapping Keys
+### <a name="tapping-keys"></a>Tapping Keys
 
-`tap()` is the simplest way to press and release a single key. Use `KEY_*` constants from `BLEHIDKeys.h`.
+`tap()` is the simplest way to press and release a single key. Use `KEY_*` constants from `src/BLEHIDKeys.h`.
 
 ```.ino
 // Tap a single key
@@ -170,9 +197,11 @@ keyboard.tap(KEY_Z, KEY_MOD_LCTRL);    // Ctrl+Z (undo)
 keyboard.tap(KEY_DELETE, KEY_MOD_LCTRL | KEY_MOD_LALT);  // Ctrl+Alt+Del
 ```
 
+[[Top]](#api-reference)
+
 ---
 
-### Pressing Keys
+### <a name="pressing-keys"></a>Pressing Keys
 
 Use `press()` and `release()` when you need to hold a key down. You must add `delay()` calls yourself between each step.
 
@@ -185,8 +214,11 @@ delay(25);
 
 keyboard.press(KEY_I);
 delay(25);
-keyboard.releaseAll();
+keyboard.release(KEY_I);
 delay(25);
+keyboard.press(KEY_I);
+delay(25);
+keyboard.releaseAll();
 ```
 
 > **Tip:** For most use cases, `tap()` is simpler and handles all timing automatically. Use `press()`/`release()` only when you need precise control over hold timing.
@@ -197,11 +229,13 @@ delay(25);
 keyboard.releaseAll();
 ```
 
+[[Top]](#api-reference)
+
 ---
 
-### Media / Consumer Keys
+### <a name="media--consumer-keys"></a>Media / Consumer Keys
 
-Media keys work with both `tap()` and `press()`. Use `MEDIA_*` constants from `BLEHIDMediaKeys.h`.
+Media keys work with both `tap()` and `press()`. Use `MEDIA_*` constants from `src/BLEHIDMediaKeys.h`.
 
 ```.ino
 // Tap a media key (press and release automatically)
@@ -218,9 +252,11 @@ delay(500);
 keyboard.releaseAll();
 ```
 
+[[Top]](#api-reference)
+
 ---
 
-### Timing
+### <a name="timing"></a>Timing
 
 By default, `tap()` holds each key for **25ms** and waits **25ms** after release before the next key. You can adjust these globally, or override them for a single `tap()` call.
 
@@ -238,9 +274,11 @@ keyboard.tap(MEDIA_VOLUME_UP, 60, 40); // media key with custom timing
 
 > **Note:** iOS requires at least ~15ms for both values to reliably register every keypress. The 25ms defaults cover this.
 
+[[Top]](#api-reference)
+
 ---
 
-### Battery Level
+### <a name="battery-level"></a>Battery Level
 
 Update the battery percentage shown to the host at any time.
 
@@ -248,31 +286,57 @@ Update the battery percentage shown to the host at any time.
 keyboard.setBatteryLevel(85);  // Report 85% battery
 ```
 
+[[Top]](#api-reference)
+
 ---
 
-### Security / Pairing
+### <a name="security--pairing"></a>Security / Pairing
 
 By default the keyboard pairs automatically with no passkey. To require a 6-digit passkey, call `setSecurityMode()` before `begin()`.
 
 ```.ino
 void setup() {
     Serial.begin(115200);
-    keyboard.setSecurityMode(BLE_KB_SEC_PASSKEY);  // Must be before begin()
+    keyboard.setSecurityMode(BLEKeyboardSecurity::Passkey);  // Must be before begin()
     keyboard.begin();
 }
 ```
 
-When passkey mode is active, the passkey is printed to Serial. You can also provide a callback to handle it yourself.
+| Mode | Behaviour |
+|---|---|
+| `BLEKeyboardSecurity::JustWorks` | Auto-pair with no passcode (default) |
+| `BLEKeyboardSecurity::Passkey` | Require a 6-digit passkey printed to Serial |
+
+When passkey mode is active, the passkey is printed to Serial automatically. You can also register callbacks to handle the passkey and pairing result in your own code.
 
 ```.ino
-keyboard.onPassKey([](uint32_t passkey) {
-    Serial.print("Passkey: ");
-    Serial.println(passkey);
-});
+#include <HijelHID_BLEKeyboard.h>
 
-keyboard.onPairingComplete([](bool success) {
-    Serial.println(success ? "Paired!" : "Pairing failed.");
-});
+HijelHID_BLEKeyboard keyboard;
+
+// Called when a passkey needs to be displayed to the user.
+// Show it however makes sense for your project — Serial, display, LEDs, etc.
+void onPassKey(uint32_t passkey) {
+    Serial.print("Enter this passkey on your device: ");
+    Serial.println(passkey);
+}
+
+// Called when pairing completes or fails.
+void onPairingComplete(bool success) {
+    if (success) {
+        Serial.println("Pairing successful — keyboard is ready.");
+    } else {
+        Serial.println("Pairing failed. Try removing and re-pairing.");
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    keyboard.setSecurityMode(BLEKeyboardSecurity::Passkey);
+    keyboard.onPassKey(onPassKey);
+    keyboard.onPairingComplete(onPairingComplete);
+    keyboard.begin();
+}
 ```
 
 To forget all previously paired devices and force re-pairing:
@@ -289,9 +353,11 @@ if (keyboard.isBonded()) {
 }
 ```
 
+[[Top]](#api-reference)
+
 ---
 
-### LED State
+### <a name="led-state"></a>LED State
 
 The host sends LED state back to the keyboard (Num Lock, Caps Lock, Scroll Lock). You can read the current state or set a callback to react to changes.
 
@@ -317,29 +383,29 @@ keyboard.onLEDChange([](uint8_t leds) {
 | `isNumLockOn()` | `true` if Num Lock is active |
 | `isScrollLockOn()` | `true` if Scroll Lock is active |
 
+[[Top]](#api-reference)
+
 ---
 
-### Debug Logging
+### <a name="debug-logging"></a>Debug Logging
 
 Enable Serial logging to help with troubleshooting. Call before `begin()`.
 
 ```.ino
 void setup() {
     Serial.begin(115200);
-    keyboard.setDebugLevel(HID_LOG_NORMAL);  // Connection and pairing events
+    keyboard.setDebugLevel(HIDLogLevel::Normal);  // Connection and pairing events
     keyboard.begin();
 }
 ```
 
 | Level | Output |
 |---|---|
-| `HID_LOG_OFF` | No output (default) |
-| `HID_LOG_NORMAL` | Connection, pairing, and advertising events |
-| `HID_LOG_VERBOSE` | All of the above, plus every HID report sent |
+| `HIDLogLevel::Off` | No output (default) |
+| `HIDLogLevel::Normal` | Connection, pairing, and advertising events |
+| `HIDLogLevel::Verbose` | All of the above, plus every HID report sent |
 
----
-
-Full key and media key listings are in `BLEHIDKeys.h` and `BLEHIDMediaKeys.h`.
+[[Top]](#api-reference)
 
 ---
 
