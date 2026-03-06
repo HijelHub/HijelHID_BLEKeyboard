@@ -1,6 +1,6 @@
 # <sub><img width="40" height="40" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/keyboard.svg"></sub> HijelHID_BLEKeyboard
 
-A complete BLE HID keyboard library for ESP32, built on [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) 2.x.
+A complete Bluetooth Low Energy (BLE) HID keyboard library for ESP32, built on [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) 2.x.
 
 Turn your ESP32 into a BLE HID Keyboard device.
 
