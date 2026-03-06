@@ -48,7 +48,7 @@ An ESP32 board/module with BLE [ *All except ESP32-S2 and ESP32-P4* ]
 [![Release Date](https://img.shields.io/github/release-date/HijelHub/HijelHID_BLEKeyboard.svg)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/HijelHub/HijelHID_BLEKeyboard/latest/total.svg)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
 
-1. Download the [Latest Release](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
+1. Download the [Latest ZIP](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest/download/HijelHID_BLEKeyboard.zip) [Direct Download Link]
 2. In Arduino IDE: `Sketch → Include Library → Add .ZIP Library`
 3. Select the downloaded zip
 
