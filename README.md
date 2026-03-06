@@ -64,11 +64,26 @@ void setup() {
 }
 
 void loop() {
+    delay(5000);
+    // Open a text editor on your host device
     if (keyboard.isConnected()) {
+        // Print "Hello, World!"
         keyboard.print("Hello, ");
+        keyboard.println("World!");
+        // Press and Tap "ESP32!"
+        keyboard.press(KEY_LSHIFT);
+        delay(25);
+        keyboard.tap(KEY_E);
+        keyboard.tap(KEY_S);
+        keyboard.tap(KEY_P);
+        keyboard.release(KEY_LSHIFT);
+        keyboard.tap(KEY_3);
+        keyboard.tap(KEY_2);
+        // tap an exclamation point "!"
+        keyboard.tap(KEY_1, KEY_MOD_LSHIFT);
         keyboard.tap(KEY_RETURN);
-        keyboard.println("World!")
-        delay(5000);
+        
+        keyboard.releaseAll();
     }
 }
 ```
