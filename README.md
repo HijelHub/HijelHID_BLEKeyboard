@@ -221,7 +221,7 @@ keyboard.tap(KEY_DELETE, KEY_MOD_LCTRL | KEY_MOD_LALT);  // Ctrl+Alt+Del
 Use `press()` and `release()` when you need to hold a key down. You must add `delay()` calls yourself between each step.
 
 ```.ino
-// Hold Shift while pressing two keys, then release
+// Hold Shift while pressing a key, then release
 keyboard.press(KEY_H, KEY_MOD_LSHIFT);
 delay(25);
 keyboard.releaseAll();
