@@ -44,9 +44,13 @@ An ESP32 board/module with BLE [ *All except ESP32-S2 and ESP32-P4* ]
 
 ## Installation
 
-[![Latest Release](https://img.shields.io/github/v/release/HijelHub/HijelHID_BLEKeyboard?label=Latest%20Release&color=blue&style=plastic)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
+[![Latest Release](https://img.shields.io/github/release/HijelHub/HijelHID_BLEKeyboard.svg?style=plastic&label=Latest%20Release&color=blue)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
+[![Release Date](https://img.shields.io/github/release-date/HijelHub/HijelHID_BLEKeyboard.svg?style=plastic&label=Release%20Date&color=brightgreen)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/HijelHub/HijelHID_BLEKeyboard/latest/total.svg?style=plastic&label=Downloads&color=green)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
 
-1. Download the [Latest Release](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
+
+
+1. Download the [Latest ZIP](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest/download/HijelHID_BLEKeyboard.zip) [Direct Download Link]
 2. In Arduino IDE: `Sketch → Include Library → Add .ZIP Library`
 3. Select the downloaded zip
 
@@ -64,11 +68,26 @@ void setup() {
 }
 
 void loop() {
+    delay(5000);
+    // Open a text editor on your host device
     if (keyboard.isConnected()) {
+        // Print "Hello, World!"
         keyboard.print("Hello, ");
+        keyboard.println("World!");
+        // Press and Tap "ESP32!"
+        keyboard.press(KEY_LSHIFT);
+        delay(25);
+        keyboard.tap(KEY_E);
+        keyboard.tap(KEY_S);
+        keyboard.tap(KEY_P);
+        keyboard.release(KEY_LSHIFT);
+        keyboard.tap(KEY_3);
+        keyboard.tap(KEY_2);
+        // tap an exclamation point "!"
+        keyboard.tap(KEY_1, KEY_MOD_LSHIFT);
         keyboard.tap(KEY_RETURN);
-        keyboard.println("World!")
-        delay(5000);
+        
+        keyboard.releaseAll();
     }
 }
 ```
@@ -206,7 +225,7 @@ keyboard.tap(KEY_DELETE, KEY_MOD_LCTRL | KEY_MOD_LALT);  // Ctrl+Alt+Del
 Use `press()` and `release()` when you need to hold a key down. You must add `delay()` calls yourself between each step.
 
 ```.ino
-// Hold Shift while pressing two keys, then release
+// Hold Shift while pressing a key, then release
 keyboard.press(KEY_H, KEY_MOD_LSHIFT);
 delay(25);
 keyboard.releaseAll();

@@ -80,4 +80,7 @@
 
 // ─── Power / System ────────────────────────────────────────────────────────
 #define MEDIA_SLEEP                 ((uint16_t)0x0032)  // Sleep
-#define MEDIA_LOCK_SCREEN           ((uint16_t)0x019E)  // Lock screen (OS-dependent behaviour)
+// NOTE: MEDIA_LOCK_SCREEN uses the same HID usage as MEDIA_SCREENSAVER (0x019E,
+// AL Screen Saver). The Consumer Page has no dedicated "lock screen" usage.
+// Whether this triggers a screen lock or screensaver depends on the host OS.
+#define MEDIA_LOCK_SCREEN           ((uint16_t)0x019E)  // AL Screen Saver (OS-dependent behaviour)

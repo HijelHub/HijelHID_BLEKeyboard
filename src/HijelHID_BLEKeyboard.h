@@ -251,6 +251,8 @@ public:
      * Hold a keyboard key down (sends a key-down report immediately).
      * Supports up to 6 simultaneous non-modifier keys (6KRO).
      * You must call `release()` or `releaseAll()` afterwards, with appropriate delays.
+     * Modifiers added here remain held until explicitly cleared via `releaseAll()`
+     * or by releasing the corresponding modifier keycode.
      *
      * `keycode` is a `KEY_*` constant from `BLEHIDKeys.h`.
      * `modifiers` is an optional bitmask of `KEY_MOD_*` values OR'd together.
@@ -322,6 +324,13 @@ public:
      */
     size_t write(uint8_t c) override;
 
+    /**
+     * Type a string of ASCII characters. Overrides `Print::write(buf, size)`.
+     * Each character is sent via the single-byte `write(uint8_t)` overload,
+     * which calls `tap()` internally with the current global timing.
+     */
+    size_t write(const uint8_t* buffer, size_t size) override;
+
     // ─── LED State (from host) ────────────────────────────────────────────
 
     /** Returns `true` if the Num Lock LED is active on the host. */
@@ -370,7 +379,7 @@ private:
     bool _batClamped;     // battery level was 0 or >100
 
     // ── Runtime State ─────────────────────────────────────────────────────
-    bool     _connected;
+    volatile bool _connected;
     uint8_t  _ledState;
     uint8_t  _keyReport[HID_KEYBOARD_REPORT_SIZE];  // [mod][0x00][k0..k5]
     bool     _consumerActive;  // true while a consumer/media key is held down
@@ -383,11 +392,13 @@ private:
     void (*_cbLEDChange)(uint8_t);
 
     // ── BLE Objects ───────────────────────────────────────────────────────
-    NimBLEServer*         _pServer;
-    NimBLEHIDDevice*      _pHID;
-    NimBLECharacteristic* _pKeyboardInput;   // Report ID 0x01 Input  (keys → host)
-    NimBLECharacteristic* _pKeyboardOutput;  // Report ID 0x01 Output (LEDs ← host)
-    NimBLECharacteristic* _pConsumerInput;   // Report ID 0x02 Input  (media → host)
+    NimBLEServer*              _pServer;
+    NimBLEHIDDevice*           _pHID;
+    NimBLECharacteristic*      _pKeyboardInput;   // Report ID 0x01 Input  (keys → host)
+    NimBLECharacteristic*      _pKeyboardOutput;  // Report ID 0x01 Output (LEDs ← host)
+    NimBLECharacteristic*      _pConsumerInput;   // Report ID 0x02 Input  (media → host)
+    _HijelKBServerCallbacks*   _pServerCb;        // Owned by us, passed to NimBLE
+    _HijelKBLEDCallbacks*      _pLEDCb;           // Owned by us, passed to NimBLE
 
     // ── Internal Helpers ──────────────────────────────────────────────────
     void    _sendKeyReport();
