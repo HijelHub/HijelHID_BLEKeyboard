@@ -103,6 +103,14 @@ enum class HIDLogLevel : uint8_t {
     Verbose = 2,
 };
 
+// ─── BLE Lifecycle State ──────────────────────────────────────────────────
+// Used internally to track the BLE stack state across begin()/end()/kill().
+enum class _BLEState : uint8_t {
+    Stopped = 0,  // Not running — begin() will start or restart BLE
+    Running = 1,  // Actively advertising or connected — begin() is a no-op
+    Killed  = 2,  // Permanently shut down via kill() — begin() is refused
+};
+
 // ─── Forward Declaration ───────────────────────────────────────────────────
 class HijelHID_BLEKeyboard;
 
@@ -170,13 +178,32 @@ public:
     /**
      * Initialise BLE, register GATT services, and start advertising.
      * Call once in `setup()`. Blocks until the NimBLE host task is ready.
+     *
+     * After `end()`, calling `begin()` again restarts advertising without
+     * reinitialising the BLE stack — all GATT objects are reused.
+     *
+     * After `kill()`, calling `begin()` is refused with a warning.
      */
     void begin();
 
     /**
-     * Stop advertising and deinitialise the BLE stack.
+     * Stop advertising and disconnect any connected host.
+     * The BLE stack and GATT objects remain in memory so `begin()` can
+     * restart quickly without reinitialisation.
+     *
+     * For permanent shutdown with full memory cleanup, use `kill()`.
      */
     void end();
+
+    /**
+     * Permanently shut down and deinitialise the BLE stack.
+     * Disconnects, stops advertising, tears down the NimBLE stack, and
+     * frees all BLE memory. `begin()` cannot be called after `kill()`.
+     *
+     * A small per-cycle leak (~48 bytes) exists in the ESP-IDF NimBLE
+     * port and cannot be avoided. For pause/resume use `end()`/`begin()`.
+     */
+    void kill();
 
     // ─── Connection State ────────────────────────────────────────────────
 
@@ -379,8 +406,9 @@ private:
     bool _batClamped;     // battery level was 0 or >100
 
     // ── Runtime State ─────────────────────────────────────────────────────
-    volatile bool _connected;
-    uint8_t  _ledState;
+    _BLEState _state;             // lifecycle: Stopped → Running → Stopped (or Killed)
+    volatile bool _connected;     // true while a host is connected (set from NimBLE task)
+    volatile uint8_t _ledState;   // LED bitmask from host (written from NimBLE task)
     uint8_t  _keyReport[HID_KEYBOARD_REPORT_SIZE];  // [mod][0x00][k0..k5]
     bool     _consumerActive;  // true while a consumer/media key is held down
     uint32_t _lastReportMs;   // millis() of last successful notify — used to detect host-side

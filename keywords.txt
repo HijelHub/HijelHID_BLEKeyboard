@@ -10,6 +10,7 @@ HIDLogLevel	KEYWORD1
 # ── Methods and Functions (KEYWORD2) ─────────────────────────────────────
 begin	KEYWORD2
 end	KEYWORD2
+kill	KEYWORD2
 setDebugLevel	KEYWORD2
 isConnected	KEYWORD2
 isBonded	KEYWORD2

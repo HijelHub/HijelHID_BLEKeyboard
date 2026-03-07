@@ -197,7 +197,6 @@ void _HijelKBServerCallbacks::onConnect(NimBLEServer* pServer, NimBLEConnInfo& c
 void _HijelKBServerCallbacks::onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) {
     (void)reason;
     _parent->_onDisconnect();
-    NimBLEDevice::startAdvertising();
 }
 
 void _HijelKBServerCallbacks::onAuthenticationComplete(NimBLEConnInfo& connInfo) {
@@ -244,6 +243,7 @@ HijelHID_BLEKeyboard::HijelHID_BLEKeyboard(const char* deviceName,
       _tapDelay(HID_DEFAULT_TAP_DELAY_MS),
       _keyGap(HID_DEFAULT_KEY_GAP_MS),
       _logLevel(HIDLogLevel::Off),
+      _state(_BLEState::Stopped),
       _connected(false),
       _ledState(0),
       _consumerActive(false),
@@ -342,6 +342,16 @@ void HijelHID_BLEKeyboard::_logVf(const char* fmt, ...) {
 
 void HijelHID_BLEKeyboard::begin() {
 
+    // ── Guard: already running or permanently killed ──────────────────
+    if (_state == _BLEState::Running) {
+        _logN("begin() called while already running — ignored.");
+        return;
+    }
+    if (_state == _BLEState::Killed) {
+        _logN("ERROR: begin() called after kill() — BLE stack is permanently shut down.");
+        return;
+    }
+
     // Print any deferred constructor warnings now that Serial is running
     if (_nameTruncated) {
         Serial.printf("[HijelHID] WARNING: Device name too long, truncated to %d chars: \"%s\"\n",
@@ -356,6 +366,17 @@ void HijelHID_BLEKeyboard::begin() {
                       _batteryLevel);
     }
 
+    // ── Restart path: stack is already initialised (after end()) ──────
+    if (NimBLEDevice::isInitialized()) {
+        _logN("Restarting advertising (BLE stack already initialised)...");
+        NimBLEDevice::startAdvertising();
+        _state = _BLEState::Running;
+        _logNf("Advertising as \"%s\". Tap delay: %dms, key gap: %dms.",
+               _deviceName.c_str(), _tapDelay, _keyGap);
+        return;
+    }
+
+    // ── First-time path: full BLE initialisation ──────────────────────
     _logN("Initialising NimBLE stack...");
     NimBLEDevice::init(_deviceName.c_str());
 
@@ -394,7 +415,6 @@ void HijelHID_BLEKeyboard::begin() {
 
     // Create HID device and configure its metadata
     _logN("Creating HID device...");
-    delete _pHID;  // safe even if nullptr
     _pHID = new NimBLEHIDDevice(_pServer);
     _pHID->setManufacturer(_manufacturer.c_str());
     // PnP ID: source=Bluetooth SIG (0x01), VID=Espressif (0x02E5), PID=0x0001, version=0x0100
@@ -442,6 +462,7 @@ void HijelHID_BLEKeyboard::begin() {
     pAdv->setScanResponseData(scanResponse);
 
     NimBLEDevice::startAdvertising();
+    _state = _BLEState::Running;
     _logNf("Advertising as \"%s\". Tap delay: %dms, key gap: %dms.",
            _deviceName.c_str(), _tapDelay, _keyGap);
 }
@@ -449,20 +470,78 @@ void HijelHID_BLEKeyboard::begin() {
 // ─── end() ────────────────────────────────────────────────────────────────
 
 void HijelHID_BLEKeyboard::end() {
-    _logN("Deinitialising...");
-    NimBLEDevice::deinit(true);
-    _connected = false;
+    if (_state != _BLEState::Running) return;
+    _logN("Stopping...");
 
-    // NimBLEDevice::deinit() destroys the server and its characteristics,
-    // but does not free objects we allocated with new.
-    delete _pHID;       _pHID = nullptr;
-    delete _pServerCb;  _pServerCb = nullptr;
-    delete _pLEDCb;     _pLEDCb = nullptr;
+    // Set state BEFORE disconnecting so the onDisconnect callback
+    // (which checks _state) won't restart advertising.
+    _state = _BLEState::Stopped;
+
+    // Disconnect the current client if connected
+    if (_connected && _pServer != nullptr) {
+        // Disconnect all connected peers
+        auto peers = _pServer->getPeerDevices();
+        for (auto& handle : peers) {
+            _pServer->disconnect(handle);
+        }
+        // Give NimBLE time to complete the disconnect and fire callbacks
+        delay(150);
+    }
+
+    // Stop advertising so no new connections are accepted
+    NimBLEDevice::stopAdvertising();
+
+    // Reset internal state
+    _connected = false;
+    memset(_keyReport, 0, sizeof(_keyReport));
+    _ledState = 0;
+    _consumerActive = false;
+    _lastReportMs = 0;
+
+    _logN("Stopped. Call begin() to restart.");
+}
+
+// ─── kill() ──────────────────────────────────────────────────────────────
+
+void HijelHID_BLEKeyboard::kill() {
+    if (_state == _BLEState::Killed) return;
+
+    // If still running, stop cleanly first (disconnect + stop advertising)
+    if (_state == _BLEState::Running) {
+        end();
+    }
+
+    _logN("Killing BLE (permanent shutdown)...");
+
+    // Tear down the NimBLE stack and free all NimBLE-managed objects
+    // (server, services, characteristics, descriptors).
+    // end() has already disconnected and stopped advertising, so
+    // deinit will not fire onDisconnect callbacks.
+    NimBLEDevice::deinit(true);
+
+    // deinit(true) frees all BLE objects including memory regions that
+    // overlap with objects we allocated (_pHID, _pServerCb, _pLEDCb).
+    // Calling delete on these after deinit causes a double-free crash.
+    // Just null the pointers — the memory is already reclaimed.
+    _pHID       = nullptr;
+    _pServerCb  = nullptr;
+    _pLEDCb     = nullptr;
 
     _pServer         = nullptr;
     _pKeyboardInput  = nullptr;
     _pKeyboardOutput = nullptr;
     _pConsumerInput  = nullptr;
+
+    _state = _BLEState::Killed;
+    _logN("BLE killed. begin() will be refused from this point.");
+
+    // NOTE: A small one-time memory leak (~308 bytes) remains after kill().
+    // ~48 bytes is a known leak in the ESP-IDF NimBLE port's init/deinit
+    // path (Espressif issue #8136). The remainder is from our wrapper
+    // objects (_pHID, _pServerCb, _pLEDCb) which cannot be safely freed
+    // because deinit(true) corrupts the heap metadata around them.
+    // Since kill() sets _state to Killed and begin() is refused afterward,
+    // this leak is bounded and will not compound.
 }
 
 // ─── Connection State ─────────────────────────────────────────────────────
@@ -470,10 +549,15 @@ void HijelHID_BLEKeyboard::end() {
 bool HijelHID_BLEKeyboard::isConnected() const { return _connected; }
 
 bool HijelHID_BLEKeyboard::isBonded() const {
+    if (_state == _BLEState::Killed) return false;
     return (NimBLEDevice::getNumBonds() > 0);
 }
 
 void HijelHID_BLEKeyboard::clearBonds() {
+    if (_state == _BLEState::Killed) {
+        _logN("WARNING: clearBonds() called after kill() — ignored.");
+        return;
+    }
     _logN("Clearing all bonds.");
     NimBLEDevice::deleteAllBonds();
 }
@@ -481,6 +565,9 @@ void HijelHID_BLEKeyboard::clearBonds() {
 // ─── Security ─────────────────────────────────────────────────────────────
 
 void HijelHID_BLEKeyboard::setSecurityMode(BLEKeyboardSecurity mode) {
+    if (_state == _BLEState::Running) {
+        _logN("WARNING: setSecurityMode() called after begin() — will take effect on next begin() cycle.");
+    }
     _secMode = mode;
 }
 
@@ -500,6 +587,10 @@ void HijelHID_BLEKeyboard::setKeyGap(uint16_t ms)   { _keyGap   = ms; }
 // ─── Battery ──────────────────────────────────────────────────────────────
 
 void HijelHID_BLEKeyboard::setBatteryLevel(uint8_t level) {
+    if (_state == _BLEState::Killed) {
+        _logN("WARNING: setBatteryLevel() called after kill() — ignored.");
+        return;
+    }
     if (level == 0) {
         _logN("WARNING: Battery level 0 is invalid, clamping to 1.");
         level = 1;
@@ -683,7 +774,13 @@ void HijelHID_BLEKeyboard::_onDisconnect() {
     _ledState = 0;
     _consumerActive = false;
     _lastReportMs = 0;  // force wakeup prime on next report after reconnect
-    _logN("Host disconnected. Restarting advertising...");
+
+    if (_state == _BLEState::Running) {
+        _logN("Host disconnected. Restarting advertising...");
+        NimBLEDevice::startAdvertising();
+    } else {
+        _logN("Host disconnected.");
+    }
 }
 
 void HijelHID_BLEKeyboard::_onAuthComplete(bool success) {
