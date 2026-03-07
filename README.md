@@ -100,7 +100,7 @@ void loop() {
 <summary>API INDEX</summary>
 
 * [Constructor](#constructor)
-* [Setup](#setup)
+* [Lifecycle](#lifecycle)
 * [Connection](#connection)
 * [Typing Text](#typing-text)
 * [Tapping Keys](#tapping-keys)
@@ -138,7 +138,7 @@ HijelHID_BLEKeyboard keyboard("My Keyboard", "My Company", 100);
 
 ---
 
-### <a name="setup"></a>Setup 
+### <a name="lifecycle"></a>Lifecycle
 
 Call `begin()` once in `setup()` to start BLE advertising. The device will be discoverable and ready to pair.
 
@@ -148,11 +148,27 @@ void setup() {
 }
 ```
 
-Call `end()` to stop BLE and disconnect.
+Call `end()` to disconnect and stop advertising. The BLE stack stays in memory so `begin()` can restart quickly without reinitialisation.
 
 ```.ino
-keyboard.end();
+keyboard.end();         // pause — BLE stack stays alive
+keyboard.begin();       // restart — fast, no full reinit
 ```
+
+Call `kill()` to permanently shut down and deinitialise the BLE stack, freeing all BLE memory. `begin()` cannot be called after `kill()`.
+
+```.ino
+keyboard.kill();        // permanent shutdown — frees ~38KB of heap
+// keyboard.begin();    // ← refused after kill(), logs a warning
+```
+
+| Method | Effect | `begin()` after? |
+|---|---|---|
+| `begin()` | Initialise BLE and start advertising | N/A |
+| `end()` | Disconnect and stop advertising, BLE stack stays in memory | Yes — fast restart |
+| `kill()` | Full teardown, frees all BLE memory | No — permanently shut down |
+
+> **Note:** A small bounded memory leak (~308 bytes) remains after `kill()` due to an upstream issue in the ESP-IDF NimBLE port. Since `begin()` is refused after `kill()`, this leak cannot compound. For pause/resume scenarios, use `end()` and `begin()` instead.
 
 [[Top]](#api-reference)
 
@@ -485,6 +501,3 @@ Feel free to post your known working hardware/OS versions and combos in the Disc
 Please take the time to **properly** report any bugs you come across.
 
 ---
-
-
-
