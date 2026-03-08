@@ -454,7 +454,7 @@ void setup() {
 
 | Platform | Pairing | Notes |
 |---|---|---|
-| **iOS** | Auto or passkey | PnP ID required; LE Secure Connections enabled by default |
+| **iOS** | Auto or passkey | &bull;  PnP ID required; LE Secure Connections enabled by default<br> &bull; When attempting to change the deviceName, new names will only appear:<br> &emsp; 1) AFTER you re-pair the device <br> &emsp; 2) IF the new deviceName is SHORTER than the cached name<br> &emsp; 3) OR the new deviceName is LESS than 20 Characters |
 | **Android** | Auto | Vendor quirks vary; Just Works works on most devices |
 | **macOS** | Auto or passkey | May be asked to "Setup Keyboard", but canceling out of this setup appears to be harmless and tests still passed |
 | **Windows 10/11** | Auto or passkey | Caches HID descriptor — fully unpair before flashing a new descriptor during development |
