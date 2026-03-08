@@ -173,7 +173,7 @@ keyboard.kill();        // permanent shutdown — frees ~38KB of heap
 | `kill()` | Full teardown, frees all BLE memory | No — permanently shut down |
 
 > [!NOTE]
-> A small bounded memory leak (~308 bytes) remains after `kill()` due to an upstream issue in the ESP-IDF NimBLE port. Since `begin()` is refused after `kill()`, this leak cannot compound. For pause/resume scenarios, use `end()` and `begin()` instead.
+> A small bounded memory leak (~308 bytes) remains after `kill()` due to an apperant upstream issue with NimBLE. Since `begin()` is refused after `kill()`, this leak cannot compound. For pause/resume scenarios, use `end()` and `begin()` instead.
 
 
 [[Top]](#api-reference)
