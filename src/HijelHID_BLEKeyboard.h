@@ -546,8 +546,8 @@ public:
 
     // ─── Internal Callbacks (do not call directly) ────────────────────────
     void        _onConnect(uint16_t connHandle);
-    void        _onDisconnect();
-    void        _onAuthComplete(bool success);
+    void        _onDisconnect(uint16_t connHandle);
+    void        _onAuthComplete(uint16_t connHandle, bool success);
     void        _onConfirmPassKey(uint32_t passkey);
     void        _onLEDWrite(uint8_t ledByte);
     static void _idleTimerCallback(TimerHandle_t xTimer);

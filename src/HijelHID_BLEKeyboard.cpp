@@ -196,11 +196,11 @@ void HijelHID_Internal::KBServerCallbacks::onConnect(NimBLEServer* pServer, NimB
 
 void HijelHID_Internal::KBServerCallbacks::onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) {
     (void)reason;
-    _parent->_onDisconnect();
+    _parent->_onDisconnect(connInfo.getConnHandle());
 }
 
 void HijelHID_Internal::KBServerCallbacks::onAuthenticationComplete(NimBLEConnInfo& connInfo) {
-    _parent->_onAuthComplete(connInfo.isEncrypted());
+    _parent->_onAuthComplete(connInfo.getConnHandle(), connInfo.isEncrypted());
 }
 
 void HijelHID_Internal::KBServerCallbacks::onConfirmPassKey(NimBLEConnInfo& connInfo, uint32_t pass_key) {
@@ -1094,13 +1094,23 @@ void HijelHID_BLEKeyboard::afterWake() {
 }
 
 void HijelHID_BLEKeyboard::_onConnect(uint16_t connHandle) {
+    if (_authenticated && _connHandle != connHandle) {
+        _logNf("Secondary client connected (handle=0x%04X).", connHandle);
+        return;
+    }
+
     _connected  = true;
     _connHandle = connHandle;
     _connState  = _ConnState::Connecting;
     _logNf("Host connected (handle=0x%04X).", connHandle);
 }
 
-void HijelHID_BLEKeyboard::_onDisconnect() {
+void HijelHID_BLEKeyboard::_onDisconnect(uint16_t connHandle) {
+    if (_connHandle != BLE_HS_CONN_HANDLE_NONE && _connHandle != connHandle) {
+        _logNf("Secondary client disconnected (handle=0x%04X).", connHandle);
+        return;
+    }
+
     _stopIdleTimer();
     _pendingIdleTransition = false;
     _connState  = _ConnState::Disconnected;
@@ -1122,9 +1132,11 @@ void HijelHID_BLEKeyboard::_onDisconnect() {
     }
 }
 
-void HijelHID_BLEKeyboard::_onAuthComplete(bool success) {
+void HijelHID_BLEKeyboard::_onAuthComplete(uint16_t connHandle, bool success) {
     if (success) {
+        _connected     = true;
         _authenticated = true;
+        _connHandle    = connHandle;
         _connState     = _ConnState::Active;
         _logN("Pairing complete (encrypted). Requesting full-rate connection params...");
         // Request Active-state connection params: full rate, no latency.
