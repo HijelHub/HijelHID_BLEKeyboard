@@ -196,11 +196,11 @@ void HijelHID_Internal::KBServerCallbacks::onConnect(NimBLEServer* pServer, NimB
 
 void HijelHID_Internal::KBServerCallbacks::onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) {
     (void)reason;
-    _parent->_onDisconnect();
+    _parent->_onDisconnect(connInfo.getConnHandle());
 }
 
 void HijelHID_Internal::KBServerCallbacks::onAuthenticationComplete(NimBLEConnInfo& connInfo) {
-    _parent->_onAuthComplete(connInfo.isEncrypted());
+    _parent->_onAuthComplete(connInfo.getConnHandle(), connInfo.isEncrypted());
 }
 
 void HijelHID_Internal::KBServerCallbacks::onConfirmPassKey(NimBLEConnInfo& connInfo, uint32_t pass_key) {
@@ -1094,13 +1094,34 @@ void HijelHID_BLEKeyboard::afterWake() {
 }
 
 void HijelHID_BLEKeyboard::_onConnect(uint16_t connHandle) {
-    _connected  = true;
-    _connHandle = connHandle;
-    _connState  = _ConnState::Connecting;
-    _logNf("Host connected (handle=0x%04X).", connHandle);
+    // A client has connected at the GAP layer. We cannot yet identify whether
+    // this is the HID host or a secondary BLE client — that distinction is only
+    // resolved in _onAuthComplete(), which is the correct place to set _connHandle.
+    // For now, mark as connected and move to Connecting state. If _connHandle is
+    // already set (we have an authenticated HID host), this is a secondary client
+    // connecting alongside it — log it and leave all HID state untouched.
+    if (_connHandle != BLE_HS_CONN_HANDLE_NONE) {
+        _logNf("Secondary client connected (handle=0x%04X) — HID host state unchanged.", connHandle);
+        return;
+    }
+    _connected = true;
+    _connState = _ConnState::Connecting;
+    _logNf("Client connected (handle=0x%04X) — waiting for authentication.", connHandle);
 }
 
-void HijelHID_BLEKeyboard::_onDisconnect() {
+void HijelHID_BLEKeyboard::_onDisconnect(uint16_t connHandle) {
+    // If we have an authenticated HID host and this disconnect is NOT from that
+    // host, it is a secondary client disconnecting. Ignore it — the HID host
+    // connection and all associated state must be left intact.
+    // We guard on _connHandle (the authenticated host's handle), not _authenticated,
+    // to avoid the stale-authentication false positive that can occur during a fast
+    // bonded reconnect where _authenticated is still true from the prior session
+    // while the supervision timeout is still being processed by NimBLE.
+    if (_connHandle != BLE_HS_CONN_HANDLE_NONE && _connHandle != connHandle) {
+        _logNf("Secondary client disconnected (handle=0x%04X) — HID host state unchanged.", connHandle);
+        return;
+    }
+
     _stopIdleTimer();
     _pendingIdleTransition = false;
     _connState  = _ConnState::Disconnected;
@@ -1122,9 +1143,17 @@ void HijelHID_BLEKeyboard::_onDisconnect() {
     }
 }
 
-void HijelHID_BLEKeyboard::_onAuthComplete(bool success) {
+void HijelHID_BLEKeyboard::_onAuthComplete(uint16_t connHandle, bool success) {
     if (success) {
         _authenticated = true;
+        // Set _connHandle here — authentication is the definitive moment at which
+        // we can identify this connection as the HID host. Setting it in _onConnect()
+        // would be premature: at that point we cannot distinguish the HID host from
+        // a secondary BLE client. _connHandle remaining BLE_HS_CONN_HANDLE_NONE
+        // until authentication also means _onConnect()'s secondary-client guard
+        // and _onDisconnect()'s secondary-client filter both work correctly from
+        // the first connection onwards.
+        _connHandle    = connHandle;
         _connState     = _ConnState::Active;
         _logN("Pairing complete (encrypted). Requesting full-rate connection params...");
         // Request Active-state connection params: full rate, no latency.

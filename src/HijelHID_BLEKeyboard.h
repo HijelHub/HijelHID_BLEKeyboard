@@ -95,10 +95,35 @@
 // NimBLE task gets CPU time, which happens naturally at the next delay()
 // call inside tap(). This means the transition has slightly more latency on
 // single-core boards than on dual-core (ESP32, S3), but is functionally correct.
+//
+// HID_IDLE_THRESHOLD_MS, HID_IDLE_LATENCY, and HID_CONN_INTERVAL may be
+// overridden by defining them in your sketch before including this header:
+//
+//   '#define HID_CONN_INTERVAL 40' ->  40 × 1.25ms = 50ms — reduces BLE air-time,
+//   can relieve audio stuttering on hosts that share a BLE radio between HID and A2DP/LE Audio.
+//   NOTE: increasing this value raises report latency in both Active and Idle states — the time between
+//   a keypress and the host receiving it increasesproportionally. Fine for media controllers;
+//   may be noticeable for fast typing applications.
+//
+//   '#define HID_IDLE_THRESHOLD_MS 10000' -> wait longer before applying idle params
+//   '#define HID_IDLE_LATENCY 40'         -> fewer skipped events — less aggressive saving
+//
+//   HID_CONN_TIMEOUT is intentionally not overridable via #ifndef. The BLE spec
+//   requires: timeout > (1 + latency) × interval × 2. With the defaults
+//   (latency=80, interval=6), the minimum valid timeout is ~1215ms; the default
+//   of 3000ms provides a safe margin. If you need to change the timeout, edit
+//   the value directly here and verify the constraint holds for your parameters.
+#ifndef HID_IDLE_THRESHOLD_MS
 #define HID_IDLE_THRESHOLD_MS   5000   // inactivity before requesting idle params
+#endif
+#ifndef HID_IDLE_LATENCY
 #define HID_IDLE_LATENCY          80   // slave latency events to skip when idle
+#endif
+#ifndef HID_CONN_INTERVAL
 #define HID_CONN_INTERVAL          6   // shared connection interval: 6 × 1.25ms = 7.5ms (Active and Idle states both use this interval; slave latency is what differs)
+#endif
 #define HID_CONN_TIMEOUT         300   // supervision timeout: 300 × 10ms = 3000ms
+                                       // NOT overridable via #ifndef — see constraint note above.
 
 // ─── String Length Limits ──────────────────────────────────────────────────
 // Device name: BLE scan response packet is 31 bytes; 2 bytes are consumed by
@@ -546,8 +571,8 @@ public:
 
     // ─── Internal Callbacks (do not call directly) ────────────────────────
     void        _onConnect(uint16_t connHandle);
-    void        _onDisconnect();
-    void        _onAuthComplete(bool success);
+    void        _onDisconnect(uint16_t connHandle);
+    void        _onAuthComplete(uint16_t connHandle, bool success);
     void        _onConfirmPassKey(uint32_t passkey);
     void        _onLEDWrite(uint8_t ledByte);
     static void _idleTimerCallback(TimerHandle_t xTimer);
