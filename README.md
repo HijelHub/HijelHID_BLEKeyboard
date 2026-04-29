@@ -621,6 +621,18 @@ If you found this library useful, your support would mean a lot!
 
 If you are intending to use this library in a commercial product, your support is **expected**.
 
+<br>
+
+### My other projects you might like:
+
+[HijelHub/HijelHID_BLEMouse](https://github.com/HijelHub/HijelHID_BLEMouse)
+
+A Bluetooth Low Energy HID Mouse library for ESP32
+
+[HijelHub/HijelHub_Dashboard](https://github.com/HijelHub/HijelHub_Dashboard)
+
+A Github Analytics dashboard that automatically Gets, Stores, and Displays traffic data from multiple repos on a single page. Built completely on Githubs Free Tier.
+
 ##
 
 Feel free to post your known working hardware/OS versions and combos in the Discussions section.
