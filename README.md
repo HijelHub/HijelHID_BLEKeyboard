@@ -1,4 +1,4 @@
-# <sub><img width="40" height="40" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/keyboard.svg"></sub> HijelHID_BLEKeyboard
+# <sub><img width="40" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/keyboard.svg"></sub> HijelHID_BLEKeyboard
 
 A complete Bluetooth Low Energy (BLE) HID keyboard library for ESP32, built on [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino).
 
@@ -10,15 +10,15 @@ Works with iOS, Android, macOS, Windows, and Linux.
 
  **Testing completed on:**
 
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray/apple.svg"></sub> iOS 26.3 - Fully Tested
+ <sub><img width="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray/apple.svg"></sub> iOS 26.3 - Fully Tested
 
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/green/android2.svg"></sub> Android 16 - Fully Tested
+ <sub><img width="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/green/android2.svg"></sub> Android 16 - Fully Tested
 
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray_dark/apple.svg"></sub> macOS Ventura 13.7.8 - Fully Tested
+ <sub><img width="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray_dark/apple.svg"></sub> macOS Ventura 13.7.8 - Fully Tested
  
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/windows.svg"></sub> Windows 11 Pro 25H2 - Fully Tested
+ <sub><img width="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/windows.svg"></sub> Windows 11 Pro 25H2 - Fully Tested
 
-<sub> <img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/orange/ubuntu.svg"></sub> Ubuntu 22.04.5 LTS - Fully Tested
+<sub> <img width="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/orange/ubuntu.svg"></sub> Ubuntu 22.04.5 LTS - Fully Tested
 
 
 ---
@@ -97,7 +97,7 @@ void loop() {
 
 ---
 
-## <a name="api-reference"></a><sub><img width="30" height="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/code.svg"></sub> API Reference
+## <a name="api-reference"></a><sub><img width="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/code.svg"></sub> API Reference
 
 <details>
 <summary> CLICK FOR API INDEX </summary>
@@ -571,7 +571,7 @@ void setup() {
 
 ---
 
-## <sub><img width="30" height="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/card-list.svg"></sub> Platform Notes
+## <sub><img width="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/card-list.svg"></sub> Platform Notes
 
 | Platform | Pairing | Notes |
 |---|---|---|
@@ -583,7 +583,7 @@ void setup() {
 
 ---
 
-## <sub><img width="30" height="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/emoji-angry-fill.svg"></sub> Troubleshooting
+## <sub><img width="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/emoji-angry-fill.svg"></sub> Troubleshooting
 
 **ESP32 stuck in reboot loop**
 - Ensure you have at least Nimble-Arduino 2.3.8 installed.
@@ -605,7 +605,7 @@ void setup() {
 
 ---
 
-## <sub><img width="30" height="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/trophy.svg"></sub> Acknowledgements
+## <sub><img width="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/trophy.svg"></sub> Acknowledgements
 
 - The hundreds of contributors and maintainers of the [Espressif arduino-esp32](https://github.com/espressif/arduino-esp32) library
 - My fellow Canadian Ryan Powell AKA [h2zero](https://github.com/h2zero) for his continued work on [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) and all the contributors to the project.
@@ -613,11 +613,11 @@ void setup() {
 
 ---
 
-## <sub><img width="30" height="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/piggy-bank.svg"></sub> Support This Project
+## <sub><img width="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/piggy-bank.svg"></sub> Support This Project
 
 If you found this library useful, your support would mean a lot!
 
-<sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/purple/stripe.svg"></sub>  [Securely Donate with Stripe](https://buy.stripe.com/fZu8wQdt01Oi5wWdKycMM01)
+<sub><img width="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/purple/stripe.svg"></sub>  [Securely Donate with Stripe](https://buy.stripe.com/fZu8wQdt01Oi5wWdKycMM01)
 
 If you are intending to use this library in a commercial product, your support is **expected**.
 
