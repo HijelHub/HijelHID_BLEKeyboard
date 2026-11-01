@@ -4,6 +4,12 @@
  * Implementation of the HijelHID_BLEKeyboard library.
  * Built on NimBLE-Arduino 2.3.8+
  *
+ * FORK: layout ABNT2 (Português do Brasil).
+ *   - _kcTable / _modTable remapeadas para teclado ABNT2.
+ *   - write() decodifica UTF-8 (ç, Ç, á, ã, ô, ü, ´, ¨ ...).
+ *   - Teclas mortas (^ ` ~ ´ ¨) são enviadas como tecla morta + Espaço.
+ *   - O host DEVE estar configurado como "Português (Brasil, ABNT2)".
+ *
  * Copyright (c) 2026 Hijel. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +27,14 @@
 
 #include "HijelHID_BLEKeyboard.h"
 #include <stdarg.h>
+
+// ─── ABNT2: teclas físicas sem constante na lib original ─────────────────
+#ifndef ABN_KEY_NUBS
+#define ABN_KEY_NUBS   0x64   // \ |  (Non-US Backslash, HID 0x64)
+#endif
+#ifndef ABN_KEY_RO
+#define ABN_KEY_RO     0x87   // / ?  (International1 / tecla ABNT extra, HID 0x87)
+#endif
 
 // ─── HID Report Descriptor ────────────────────────────────────────────────
 //
@@ -72,7 +86,7 @@ static const uint8_t _hidReportDescriptor[] = {
 
     // 6-key rollover keycode array
     // Logical Maximum 0xE7 covers all standard keys including international
-    // and language keys up to KEY_RGUI.
+    // and language keys up to KEY_RGUI (inclui 0x64 e 0x87 usados no ABNT2).
     0x95, 0x06,        //   Report Count (6)
     0x75, 0x08,        //   Report Size (8 bits)
     0x15, 0x00,        //   Logical Minimum (0)
@@ -101,37 +115,46 @@ static const uint8_t _hidReportDescriptor[] = {
     0xC0,              // End Collection (Consumer Control)
 };
 
-// ─── ASCII → HID Lookup Tables ───────────────────────────────────────────
+// ─── ASCII → HID Lookup Tables (ABNT2) ───────────────────────────────────
 // Index into these with (ascii_value - 0x20) for printable ASCII 0x20–0x7E.
 // Control characters (\n, \r, \t, BS, ESC) are handled explicitly in write()
 // before these tables are consulted.
 //
 // _kcTable  — the HID keycode to send
 // _modTable — the modifier byte to send alongside it (0 or KEY_MOD_LSHIFT)
+//
+// Mapa ABNT2 (posição física HID → caracteres):
+//   0x35 Grave       ' "          0x2F Leftbrace   ´ `  (mortas)
+//   0x30 Rightbrace  [ {          0x31 Backslash   ] }
+//   0x33 Semicolon   ç Ç          0x34 Apostrophe  ~ ^  (mortas)
+//   0x38 Slash       ; :          0x64 NUBS        \ |
+//   0x87 RO          / ?
+//
+// Caracteres ^ ` ~ são teclas mortas: write() envia a tecla + Espaço.
 
 static const uint8_t _kcTable[95] = {
     // 0x20..0x2F  (space ! " # $ % & ' ( ) * + , - . /)
-    KEY_SPACE, KEY_1, KEY_APOSTROPHE, KEY_3, KEY_4, KEY_5, KEY_7,
-    KEY_APOSTROPHE, KEY_9, KEY_0, KEY_8, KEY_EQUAL, KEY_COMMA,
-    KEY_MINUS, KEY_DOT, KEY_SLASH,
+    KEY_SPACE, KEY_1, KEY_GRAVE, KEY_3, KEY_4, KEY_5, KEY_7,
+    KEY_GRAVE, KEY_9, KEY_0, KEY_8, KEY_EQUAL, KEY_COMMA,
+    KEY_MINUS, KEY_DOT, ABN_KEY_RO,
     // 0x30..0x39  (0–9)
     KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
     // 0x3A..0x3F  (: ; < = > ?)
-    KEY_SEMICOLON, KEY_SEMICOLON, KEY_COMMA, KEY_EQUAL, KEY_DOT, KEY_SLASH,
+    KEY_SLASH, KEY_SLASH, KEY_COMMA, KEY_EQUAL, KEY_DOT, ABN_KEY_RO,
     // 0x40  (@)
     KEY_2,
     // 0x41..0x5A  (A–Z)
     KEY_A, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F, KEY_G, KEY_H, KEY_I, KEY_J,
     KEY_K, KEY_L, KEY_M, KEY_N, KEY_O, KEY_P, KEY_Q, KEY_R, KEY_S, KEY_T,
     KEY_U, KEY_V, KEY_W, KEY_X, KEY_Y, KEY_Z,
-    // 0x5B..0x60  ([ \ ] ^ _ `)
-    KEY_LEFTBRACE, KEY_BACKSLASH, KEY_RIGHTBRACE, KEY_6, KEY_MINUS, KEY_GRAVE,
+    // 0x5B..0x60  ([ \ ] ^ _ `)   — ^ e ` são teclas mortas
+    KEY_RIGHTBRACE, ABN_KEY_NUBS, KEY_BACKSLASH, KEY_APOSTROPHE, KEY_MINUS, KEY_LEFTBRACE,
     // 0x61..0x7A  (a–z)
     KEY_A, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F, KEY_G, KEY_H, KEY_I, KEY_J,
     KEY_K, KEY_L, KEY_M, KEY_N, KEY_O, KEY_P, KEY_Q, KEY_R, KEY_S, KEY_T,
     KEY_U, KEY_V, KEY_W, KEY_X, KEY_Y, KEY_Z,
-    // 0x7B..0x7E  ({ | } ~)
-    KEY_LEFTBRACE, KEY_BACKSLASH, KEY_RIGHTBRACE, KEY_GRAVE,
+    // 0x7B..0x7E  ({ | } ~)       — ~ é tecla morta
+    KEY_RIGHTBRACE, ABN_KEY_NUBS, KEY_BACKSLASH, KEY_APOSTROPHE,
 };
 
 static const uint8_t _modTable[95] = {
@@ -175,9 +198,9 @@ static const uint8_t _modTable[95] = {
     0,               // [
     0,               // backslash
     0,               // ]
-    KEY_MOD_LSHIFT,  // ^
+    KEY_MOD_LSHIFT,  // ^  (morta)
     KEY_MOD_LSHIFT,  // _
-    0,               // `
+    KEY_MOD_LSHIFT,  // `  (morta)  — ABNT2: Shift + tecla ´
     // 0x61..0x7A  (a–z, no shift)
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -185,8 +208,66 @@ static const uint8_t _modTable[95] = {
     KEY_MOD_LSHIFT,  // {
     KEY_MOD_LSHIFT,  // |
     KEY_MOD_LSHIFT,  // }
-    KEY_MOD_LSHIFT,  // ~
+    0,               // ~  (morta)  — ABNT2: tecla ~ sem Shift
 };
+
+// ─── ABNT2: teclas mortas e caracteres acentuados ───────────────────────
+//
+// Teclas mortas ABNT2:
+//   ´ = 0x2F            ` = Shift + 0x2F
+//   ~ = 0x34            ^ = Shift + 0x34
+//   ¨ = Shift + 0x23 (tecla 6)
+
+enum { D_ACUTE, D_GRAVE, D_TILDE, D_CIRC, D_DIAER };
+
+static const struct { uint8_t kc, mod; } _dead[5] = {
+    { KEY_LEFTBRACE,  0              },  // ´
+    { KEY_LEFTBRACE,  KEY_MOD_LSHIFT },  // `
+    { KEY_APOSTROPHE, 0              },  // ~
+    { KEY_APOSTROPHE, KEY_MOD_LSHIFT },  // ^
+    { KEY_6,          KEY_MOD_LSHIFT },  // ¨
+};
+
+static const struct { uint16_t cp; char base; uint8_t dead; } _accents[] = {
+    // agudo
+    {0xE1,'a',D_ACUTE},{0xE9,'e',D_ACUTE},{0xED,'i',D_ACUTE},{0xF3,'o',D_ACUTE},{0xFA,'u',D_ACUTE},{0xFD,'y',D_ACUTE},
+    {0xC1,'A',D_ACUTE},{0xC9,'E',D_ACUTE},{0xCD,'I',D_ACUTE},{0xD3,'O',D_ACUTE},{0xDA,'U',D_ACUTE},{0xDD,'Y',D_ACUTE},
+    // grave
+    {0xE0,'a',D_GRAVE},{0xE8,'e',D_GRAVE},{0xEC,'i',D_GRAVE},{0xF2,'o',D_GRAVE},{0xF9,'u',D_GRAVE},
+    {0xC0,'A',D_GRAVE},{0xC8,'E',D_GRAVE},{0xCC,'I',D_GRAVE},{0xD2,'O',D_GRAVE},{0xD9,'U',D_GRAVE},
+    // til
+    {0xE3,'a',D_TILDE},{0xF5,'o',D_TILDE},{0xF1,'n',D_TILDE},
+    {0xC3,'A',D_TILDE},{0xD5,'O',D_TILDE},{0xD1,'N',D_TILDE},
+    // circunflexo
+    {0xE2,'a',D_CIRC },{0xEA,'e',D_CIRC },{0xEE,'i',D_CIRC },{0xF4,'o',D_CIRC },{0xFB,'u',D_CIRC },
+    {0xC2,'A',D_CIRC },{0xCA,'E',D_CIRC },{0xCE,'I',D_CIRC },{0xD4,'O',D_CIRC },{0xDB,'U',D_CIRC },
+    // trema
+    {0xE4,'a',D_DIAER},{0xEB,'e',D_DIAER},{0xEF,'i',D_DIAER},{0xF6,'o',D_DIAER},{0xFC,'u',D_DIAER},{0xFF,'y',D_DIAER},
+    {0xC4,'A',D_DIAER},{0xCB,'E',D_DIAER},{0xCF,'I',D_DIAER},{0xD6,'O',D_DIAER},{0xDC,'U',D_DIAER},
+};
+
+// Tecla morta + Espaço → imprime o símbolo isolado.
+static void _tapDead(HijelHID_BLEKeyboard& kb, uint8_t d) {
+    kb.tap(_dead[d].kc, _dead[d].mod);
+    kb.tap(KEY_SPACE);
+}
+
+// Trata um code point Unicode >= 0x80. Retorna true se foi tratado.
+static bool _abnt2Codepoint(HijelHID_BLEKeyboard& kb, uint32_t cp) {
+    if (cp == 0xE7) { kb.tap(KEY_SEMICOLON, 0);              return true; }  // ç
+    if (cp == 0xC7) { kb.tap(KEY_SEMICOLON, KEY_MOD_LSHIFT); return true; }  // Ç
+    if (cp == 0xB4) { _tapDead(kb, D_ACUTE); return true; }                  // ´
+    if (cp == 0xA8) { _tapDead(kb, D_DIAER); return true; }                  // ¨
+    for (const auto& a : _accents) {
+        if (a.cp == cp) {
+            kb.tap(_dead[a.dead].kc, _dead[a.dead].mod);
+            uint8_t idx = (uint8_t)(a.base - 0x20);
+            kb.tap(_kcTable[idx], _modTable[idx]);
+            return true;
+        }
+    }
+    return false;
+}
 
 // ─── Internal Callback Implementations ──────────────────────────────────────
 
@@ -959,10 +1040,28 @@ void HijelHID_BLEKeyboard::tap(uint16_t usageId,
     delay(keyGap);
 }
 
-// ─── Print::write() — ASCII → HID ────────────────────────────────────────
+// ─── Print::write() — ASCII / UTF-8 → HID (ABNT2) ───────────────────────
 
 size_t HijelHID_BLEKeyboard::write(uint8_t c) {
     if (!_connected) return 0;
+
+    // --- Decodificador UTF-8 (estado local; a lib é single-instance na prática) ---
+    static uint8_t  need = 0;
+    static uint32_t cp   = 0;
+
+    if (c >= 0x80) {
+        if      ((c & 0xE0) == 0xC0) { need = 1; cp = c & 0x1F; return 1; }
+        else if ((c & 0xF0) == 0xE0) { need = 2; cp = c & 0x0F; return 1; }
+        else if ((c & 0xF8) == 0xF0) { need = 3; cp = c & 0x07; return 1; }
+        else if ((c & 0xC0) == 0x80 && need) {
+            cp = (cp << 6) | (c & 0x3F);
+            if (--need == 0) return _abnt2Codepoint(*this, cp) ? 1 : 0;
+            return 1;
+        }
+        need = 0;
+        return 0;
+    }
+    need = 0;
 
     // Handle ASCII control characters explicitly
     if (c == '\n' || c == '\r') { tap(KEY_RETURN);    return 1; }
@@ -975,6 +1074,14 @@ size_t HijelHID_BLEKeyboard::write(uint8_t c) {
         uint8_t idx      = c - 0x20;
         uint8_t keycode  = _kcTable[idx];
         uint8_t modifier = _modTable[idx];
+
+        // Teclas mortas: ^ ` ~  → tecla + Espaço
+        if (c == '^' || c == '`' || c == '~') {
+            _logVf("write('%c') [dead+space] -> keycode=0x%02X mod=0x%02X", c, keycode, modifier);
+            tap(keycode, modifier);
+            tap(KEY_SPACE);
+            return 1;
+        }
         if (keycode != 0) {
             _logVf("write('%c') -> keycode=0x%02X mod=0x%02X", c, keycode, modifier);
             tap(keycode, modifier);
