@@ -38,10 +38,20 @@
 #include <NimBLEHIDDevice.h>
 #include <NimBLECharacteristic.h>
 #include <freertos/FreeRTOS.h>
-#include <freertos/timers.h>
 #include <string>
 #include "BLEHIDKeys.h"
 #include "BLEHIDMediaKeys.h"
+#include "HIDKeyboardLayouts.h"
+#include "BLEHIDAppearance.h"
+
+// NimBLE port header — provides ble_npl_callout (NimBLE's own timer) and the
+// default event queue. Same conditional include NimBLE-Arduino uses internally
+// (valid for NimBLE-Arduino 2.3.8 through 2.5.x).
+#if defined(CONFIG_NIMBLE_CPP_IDF)
+#include "nimble/nimble_port.h"
+#else
+#include "nimble/porting/nimble/include/nimble/nimble_port.h"
+#endif
 
 // ─── Report IDs ────────────────────────────────────────────────────────────
 #define HID_REPORT_ID_KEYBOARD  0x01
@@ -74,56 +84,66 @@
 // using the delayMs and keyGap parameters on tap().
 #define HID_DEFAULT_TAP_DELAY_MS    25
 #define HID_DEFAULT_KEY_GAP_MS      25
-#define HID_AFTER_WAKE_SETTLE_MS   250
+#define HID_AFTER_WAKE_SETTLE_MS   250  // default for setAfterWakeSettle()
 #define HID_WINDOWS_PRIME_MS       800  // zero-report prime threshold (Windows BLE HID resume)
 
 // ─── Peripheral Latency / Idle Power Saving ────────────────────────────────
-// When no key has been pressed for HID_IDLE_THRESHOLD_MS milliseconds, the
-// library requests a connection parameter update with slave latency applied.
-// This allows the BLE radio to skip up to HID_IDLE_LATENCY consecutive
-// connection events, reducing the effective radio duty cycle from ~133/sec
-// to ~1.6/sec during idle — a significant power saving with no impact on
-// typing responsiveness (the first keypress immediately restores full rate).
+// When no report has been sent for HID_IDLE_THRESHOLD_MS milliseconds, the
+// library requests idle connection parameters with peripheral latency applied,
+// letting the radio skip connection events. At the default interval the radio
+// wakes ~13×/sec instead of ~133×/sec. The first keypress restores the Active
+// parameters — keys still go out at the next connection event.
+//
+// The idle request follows Apple's Accessory Design Guidelines (the strictest
+// common host), so it is also valid on every other host:
+//   interval  — the Active interval rounded up to a multiple of 15ms (min 15ms)
+//   latency   — up to HID_IDLE_LATENCY (4), reduced so interval × (latency+1) ≤ 6s
+//   timeout   — max(6s, 3 × interval × (latency+1)), capped at 18s
+// The Active request (7.5ms / latency 0 / 3s) is unchanged and tested on all hosts.
+//
+// HID_IDLE_LATENCY is kept low on purpose: hosts can take several seconds to
+// apply the Active request after the first keypress, and until then reports
+// only go out at the radio's idle wake-ups. Latency 4 keeps that gap to
+// ~75ms at the default interval (latency 30 gave visibly choppy typing for
+// ~3s after a pause on Windows, ~465ms chunks). Apple allows up to 30.
 //
 // The host is not required to accept connection parameter update requests.
-// iOS, macOS, Windows, and Linux will generally honour them, but the timing
-// and acceptance are host-controlled. Power saving is best-effort.
+// Acceptance is host-controlled. Power saving is best-effort.
 //
-// On single-core ESP32 variants (C3, C6, C2, H2), the NimBLE host task and
-// the Arduino loop task share one CPU. The param update is posted to the
-// NimBLE task queue from the Arduino loop task — it takes effect once the
-// NimBLE task gets CPU time, which happens naturally at the next delay()
-// call inside tap(). This means the transition has slightly more latency on
-// single-core boards than on dual-core (ESP32, S3), but is functionally correct.
+// The idle timer is a NimBLE callout: its callback runs on the NimBLE host task,
+// so the idle request is made from the correct task on single- and dual-core
+// ESP32 variants alike.
 //
-// HID_IDLE_THRESHOLD_MS, HID_IDLE_LATENCY, and HID_CONN_INTERVAL may be
-// overridden by defining them in your sketch before including this header:
+// These are library defaults. They are not overridable by #define in a sketch —
+// the library .cpp is compiled separately and never sees sketch-level defines.
+// The connection interval can be changed at runtime with setConnIntervalMs().
 //
-//   '#define HID_CONN_INTERVAL 40' ->  40 × 1.25ms = 50ms — reduces BLE air-time,
-//   can relieve audio stuttering on hosts that share a BLE radio between HID and A2DP/LE Audio.
-//   NOTE: increasing this value raises report latency in both Active and Idle states — the time between
-//   a keypress and the host receiving it increasesproportionally. Fine for media controllers;
-//   may be noticeable for fast typing applications.
-//
-//   '#define HID_IDLE_THRESHOLD_MS 10000' -> wait longer before applying idle params
-//   '#define HID_IDLE_LATENCY 40'         -> fewer skipped events — less aggressive saving
-//
-//   HID_CONN_TIMEOUT is intentionally not overridable via #ifndef. The BLE spec
-//   requires: timeout > (1 + latency) × interval × 2. With the defaults
-//   (latency=80, interval=6), the minimum valid timeout is ~1215ms; the default
-//   of 3000ms provides a safe margin. If you need to change the timeout, edit
-//   the value directly here and verify the constraint holds for your parameters.
-#ifndef HID_IDLE_THRESHOLD_MS
+// HID_CONN_TIMEOUT: the BLE spec requires timeout > (1 + latency) × interval × 2.
+// The Active request uses latency 0, so 3000ms is valid for every interval
+// setConnIntervalMs() accepts (max 1000ms).
 #define HID_IDLE_THRESHOLD_MS   5000   // inactivity before requesting idle params
-#endif
-#ifndef HID_IDLE_LATENCY
-#define HID_IDLE_LATENCY          80   // slave latency events to skip when idle
-#endif
-#ifndef HID_CONN_INTERVAL
-#define HID_CONN_INTERVAL          6   // shared connection interval: 6 × 1.25ms = 7.5ms (Active and Idle states both use this interval; slave latency is what differs)
-#endif
+#define HID_IDLE_LATENCY           4   // max peripheral latency when idle (Apple allows up to 30)
+#define HID_IDLE_TIMEOUT_MIN     600   // idle supervision timeout floor: 6s   (Apple min)
+#define HID_IDLE_TIMEOUT_MAX    1800   // idle supervision timeout cap:   18s  (Apple max)
+#define HID_CONN_INTERVAL          6   // default connection interval: 6 × 1.25ms = 7.5ms
 #define HID_CONN_TIMEOUT         300   // supervision timeout: 300 × 10ms = 3000ms
-                                       // NOT overridable via #ifndef — see constraint note above.
+
+// Active-request check. The host decides whether to apply a connection parameter
+// request (macOS ignores some). After asking for the Active parameters, the
+// library checks the connection's actual latency on later key events (no sooner
+// than HID_ACTIVE_CHECK_MS after the request). If the host has not applied them,
+// it asks again — at most HID_ACTIVE_MAX_RETRIES times. If the host still refuses,
+// the library falls back for the rest of that connection: first to 15ms (if the
+// requested interval was below 15ms, the Apple minimum), then to the last interval
+// the host was seen using at latency 0. If neither works it keeps the parameters
+// the host chose (typing works either way). Disconnect or setConnIntervalMs()
+// resets the fallback.
+#define HID_ACTIVE_CHECK_MS     2000   // time the host gets to apply a request
+#define HID_ACTIVE_MAX_RETRIES     3   // re-asks per request before giving up
+
+// Valid range for setConnIntervalMs(), in 1.25ms units.
+#define HID_CONN_INTERVAL_MIN      6   // 7.5ms  (BLE spec minimum)
+#define HID_CONN_INTERVAL_MAX    800   // 1000ms
 
 // ─── String Length Limits ──────────────────────────────────────────────────
 // Device name: BLE scan response packet is 31 bytes; 2 bytes are consumed by
@@ -146,6 +166,17 @@ enum class BLEKeyboardSecurity : uint8_t {
 // Alias — use HIDSecurity for consistency with BLEMouse library.
 // BLEKeyboardSecurity remains valid for existing sketches.
 using HIDSecurity = BLEKeyboardSecurity;
+
+// ─── Pairing Modes ─────────────────────────────────────────────────────────
+// Auto   — any device can pair whenever the keyboard is advertising (default).
+// Manual — only already-bonded devices can connect. A new device can pair
+//          only while pairing mode is open (enterPairingMode()).
+enum class HIDPairingMode : uint8_t {
+    Auto = 0,
+    Manual,
+};
+
+#define HID_DEFAULT_PAIRING_WINDOW_MS  30000  // enterPairingMode() default window
 
 // ─── Debug Log Levels ──────────────────────────────────────────────────────
 // Pass one of these to setLogLevel() / setDebugLevel() before calling begin().
@@ -363,6 +394,42 @@ public:
      */
     void setRandomAddress(bool enable);
 
+    /**
+     * Set how new devices are allowed to pair.
+     *
+     * `HIDPairingMode::Auto` — any device can pair while the keyboard is
+     *   advertising (default — same behaviour as previous versions).
+     * `HIDPairingMode::Manual` — only already-bonded devices can connect.
+     *   A new device can pair only while pairing mode is open, started with
+     *   `enterPairingMode()` (e.g. from a button press). Unknown devices are
+     *   disconnected immediately.
+     *
+     * Can be called before or after `begin()`; applies to the next connection.
+     * Note: Manual mode also rejects unbonded secondary BLE clients.
+     */
+    void setPairingMode(HIDPairingMode mode);
+
+    /**
+     * Open pairing mode so a new device can pair (Manual mode only).
+     *
+     * Pairing mode ends when any device connects and secures the link,
+     * when `exitPairingMode()` is called, or after `windowMs` milliseconds.
+     * `windowMs` = 0 uses the default (30000 ms).
+     * Has no effect in Auto mode.
+     */
+    void enterPairingMode(uint32_t windowMs = HID_DEFAULT_PAIRING_WINDOW_MS);
+
+    /** End pairing mode early (Manual mode only). */
+    void exitPairingMode();
+
+    /**
+     * Returns `true` while pairing mode is open (Manual mode only) —
+     * e.g. to drive a "pairing" LED. Always `false` in Auto mode.
+     * This means new devices may pair right now, not that a pairing
+     * handshake is in progress.
+     */
+    bool isPairing() const;
+
     // ─── Timing ──────────────────────────────────────────────────────────
 
     /**
@@ -407,6 +474,35 @@ public:
      * automatically on every `begin()` / `end()` + `begin()` cycle.
      */
     void setTxPower(uint8_t level);
+
+    /**
+     * Set the BLE connection interval in milliseconds. Call before `begin()`.
+     * Default: 7.5 ms. Valid range 7.5–1000 ms; values are rounded to the
+     * nearest 1.25 ms (the BLE unit) and clamped with a warning.
+     *
+     * A longer interval reduces BLE air-time, which can stop audio stuttering
+     * on hosts that share one radio between this keyboard and Bluetooth audio.
+     * Trade-off: key reports reach the host more slowly. Fine for media
+     * controllers; may be noticeable when typing quickly.
+     *
+     * The host decides whether to accept the requested interval.
+     */
+    void setConnIntervalMs(uint16_t ms);
+
+    /**
+     * Set the GAP Appearance — the device type hosts may use to pick the icon
+     * shown in Bluetooth settings. Call before `begin()`; calls after the
+     * first `begin()` are ignored with a warning.
+     *
+     * Pass an `APPEARANCE_*` value from `BLEHIDAppearance.h`, or any 16-bit
+     * hex code (see `extras/BLEHIDAppearanceFull.h` for all SIG values).
+     * Default: `APPEARANCE_HID_KEYBOARD` (0x03C1).
+     *
+     * Only changes how the device is described — keys are sent the same way.
+     * Icons are chosen by each OS. Hosts remember the value from pairing:
+     * re-pair after changing it.
+     */
+    void setAppearance(uint16_t appearance);
 
     // ─── Key Input (keyboard and consumer/media) ─────────────────────────
     //
@@ -489,16 +585,63 @@ public:
     // ─── String Output ───────────────────────────────────────────────────
 
     /**
-     * Type one ASCII character. Implements `Arduino Print::write()`.
-     * Translates the character to the correct `KEY_*` keycode and modifier automatically.
-     * Supports printable ASCII (0x20–0x7E) and control chars `\n`, `\r`, `\t`, BS, ESC.
-     * Use `print()` / `println()` to send full strings — they call `write()` per character.
+     * Set the keyboard layout used by `print()`, `println()` and `write()`.
+     * Must match the keyboard layout selected on the host computer.
+     * Default: `HIDLayout_US`. Can be changed at any time.
+     *
+     * e.g. `keyboard.setKeyboardLayout(HIDLayout_German);`
+     * See `HIDKeyboardLayouts.h` for all layouts. Only layouts your sketch
+     * uses take up flash.
+     *
+     * Only affects text output — `tap()`, `press()`, `release()` and media
+     * keys send physical keys and are unaffected.
+     */
+    void setKeyboardLayout(const HIDKeyboardLayout& layout);
+
+    /** Returns the active keyboard layout. `.name` gives its display name. */
+    const HIDKeyboardLayout& getKeyboardLayout() const;
+
+    /**
+     * Returns the keycode of the key that carries character `c` on the active
+     * keyboard layout (`setKeyboardLayout()`), for use with `tap()`, `press()`
+     * and `release()`. Lets shortcuts and held keys follow the key labels on
+     * non-US layouts — `KEY_*` names are US key positions.
+     *
+     *   keyboard.tap(keyboard.keycodeFor('z'), KEY_MOD_LCTRL);  // Ctrl+Z on any layout
+     *   keyboard.press(keyboard.keycodeFor(U'ü'));              // hold the ü key
+     *   keyboard.press(keyboard.keycodeFor("ü"));               // same, UTF-8 string form
+     *
+     * Returns the key only — the Shift / AltGr the character needs are not
+     * included (`'Z'` and `'z'` return the same key). Dead keys return their key.
+     * `\n`, `\t`, backspace and escape return KEY_RETURN, KEY_TAB, KEY_BACKSPACE
+     * and KEY_ESCAPE.
+     *
+     * Returns 0 (`KEY_NONE`) if no single key on the layout carries the
+     * character — e.g. characters typed as dead key + letter (`ê` on French).
+     * Use `print()` to type those. Note: `release(0)` releases all keys.
+     *
+     * A pure lookup: sends nothing, works before `begin()`.
+     * On `HIDLayout_US` it returns the matching `KEY_*` value.
+     */
+    uint8_t keycodeFor(char32_t c) const;
+
+    /** Same as `keycodeFor(char32_t)`, for the first character of a UTF-8 string (e.g. `"é"`). */
+    uint8_t keycodeFor(const char* utf8) const;
+
+    /**
+     * Type one character. Implements `Arduino Print::write()`.
+     * Translates the character to the correct key and modifiers for the
+     * active keyboard layout (`setKeyboardLayout()`).
+     * Supports printable ASCII, control chars `\n`, `\r`, `\t`, BS, ESC, and —
+     * on layouts that have them — accented / non-ASCII characters sent as UTF-8
+     * (e.g. `print("café")`). Characters the layout cannot type are skipped.
+     * Use `print()` / `println()` to send full strings — they call `write()` per byte.
      */
     size_t write(uint8_t c) override;
 
     /**
-     * Type a string of ASCII characters. Overrides `Print::write(buf, size)`.
-     * Each character is sent via the single-byte `write(uint8_t)` overload,
+     * Type a string. Overrides `Print::write(buf, size)`.
+     * Each byte is sent via the single-byte `write(uint8_t)` overload,
      * which calls `tap()` internally with the current global timing.
      */
     size_t write(const uint8_t* buffer, size_t size) override;
@@ -527,8 +670,8 @@ public:
      *
      * Releases all held keys so the host does not see keys stuck down across
      * the sleep boundary, sets the internal priming flag so the first report
-     * after wakeup correctly primes the Windows HID resume handshake, stops
-     * the idle timer, and clears any pending idle transition flag.
+     * after wakeup correctly primes the Windows HID resume handshake, and
+     * stops the idle timer.
      *
      * Safe to call even if not connected — `releaseAll()` is a no-op when
      * there is no active connection.
@@ -548,7 +691,7 @@ public:
      *    reconnect can fire before the old supervision timeout is processed,
      *    causing reports to be sent into a connection that is about to be torn down.
      * 2. Waits for the host to reconnect and complete LTK re-encryption.
-     * 3. Settles briefly (`HID_AFTER_WAKE_SETTLE_MS`) to allow the host to
+     * 3. Settles (`setAfterWakeSettle()`, default 250ms) to allow the host to
      *    finish HID descriptor negotiation before the first report is sent.
      * 4. Restarts the idle timer so the connection transitions correctly to
      *    Idle if no key is pressed within `HID_IDLE_THRESHOLD_MS`.
@@ -569,13 +712,26 @@ public:
      */
     void setAfterWakeTimeout(uint32_t ms) { _afterWakeTimeoutMs = ms; }
 
+    /**
+     * Set how long `afterWake()` waits after the host has reconnected, before it
+     * returns (default 250ms, `HID_AFTER_WAKE_SETTLE_MS`). Not part of the
+     * `setAfterWakeTimeout()` budget.
+     *
+     * 250ms is enough for Windows, macOS and Linux. iOS can take up to ~1s after
+     * reconnecting before it accepts keys — keys typed straight after
+     * `afterWake()` are lost until then. For iPhone/iPad hosts use 1500.
+     *
+     *   keyboard.setAfterWakeSettle(1500);   // iPhone / iPad
+     */
+    void setAfterWakeSettle(uint32_t ms) { _afterWakeSettleMs = ms; }
+
     // ─── Internal Callbacks (do not call directly) ────────────────────────
-    void        _onConnect(uint16_t connHandle);
+    void        _onConnect(uint16_t connHandle, const NimBLEAddress& idAddr);
     void        _onDisconnect(uint16_t connHandle);
     void        _onAuthComplete(uint16_t connHandle, bool success);
     void        _onConfirmPassKey(uint32_t passkey);
     void        _onLEDWrite(uint8_t ledByte);
-    static void _idleTimerCallback(TimerHandle_t xTimer);
+    static void _idleCalloutCb(ble_npl_event* ev);
 
 private:
     // ── Internal State Enums ──────────────────────────────────────────────
@@ -617,6 +773,7 @@ private:
     uint16_t            _keyGap;
     HIDLogLevel         _logLevel;
     bool                _useRandomAddress;  // if true, use random static address in begin()
+    uint16_t            _appearance;        // GAP Appearance, applied once in begin(). Default 0x03C1.
 
     // ── Constructor Validation Flags ──────────────────────────────────────
     // Set in the constructor when an argument is out of range. Warnings are
@@ -646,27 +803,50 @@ private:
     uint8_t  _txPowerLevel;        // current TX power level (1–8). Stored so begin() can
                                    // re-apply it on every end()/begin() restart cycle.
     uint32_t _afterWakeTimeoutMs;  // total time budget for afterWake() across all wait steps
+    uint32_t _afterWakeSettleMs;   // afterWake() settle after reconnect (setAfterWakeSettle)
+    uint16_t _connInterval;        // requested connection interval in 1.25ms units.
+                                   // Default HID_CONN_INTERVAL; set via setConnIntervalMs().
+    uint32_t _activeReqMs;         // millis() of the last Active request (see HID_ACTIVE_CHECK_MS)
+    uint8_t  _activeRetries;       // re-asks made for the current Active request
+    bool     _activeVerified;      // true once the host is seen at latency 0 (or retries used up)
+    uint16_t _activeItvl;          // Active interval requested now: _connInterval, or a fallback
+                                   // the host accepts (see _checkActiveApplied). Per connection.
+    uint16_t _lastGoodItvl;        // last interval seen at latency 0 on this connection (0 = none)
+    bool     _firstKeyLinkCheck;   // set on authentication: the first key checks the link's latency
+                                   // and wakes it first if > 0 (see _checkActiveApplied)
+
+    // ── Keyboard Layout ───────────────────────────────────────────────────
+    const HIDKeyboardLayout* _layout;  // active layout for write(); default &HIDLayout_US
+    uint8_t                  _utf8Need; // UTF-8 continuation bytes still expected
+    uint32_t                 _utf8Cp;   // code point being decoded
+
+    // ── Pairing Mode ──────────────────────────────────────────────────────
+    // _pairingOpen is set by enterPairingMode() (loop task) and cleared by
+    // _onAuthComplete() (NimBLE task) or exitPairingMode(). Timeout is checked
+    // lazily against millis() — no timer needed.
+    HIDPairingMode _pairingMode;
+    volatile bool  _pairingOpen;
+    uint32_t       _pairingStartMs;
+    uint32_t       _pairingWindowMs;
 
     // ── Idle Power Management ─────────────────────────────────────────────
     // _connState    — current activity state of the BLE connection, independent
     //                 of the BLE stack lifecycle (_BLEState).
-    // _connHandle   — NimBLE connection handle, stored in _onConnect() and used
-    //                 by _updateConnParams(). BLE_HS_CONN_HANDLE_NONE when not
-    //                 connected. volatile because it is written from the NimBLE
-    //                 callback task and read from the Arduino loop task.
-    // _idleTimer    — one-shot FreeRTOS software timer. Created in begin(), started
+    // _connHandle   — NimBLE connection handle of the authenticated HID host,
+    //                 stored in _onAuthComplete() and used by _updateConnParams().
+    //                 BLE_HS_CONN_HANDLE_NONE when not connected. volatile because
+    //                 it is written from the NimBLE task and read from the loop task.
+    // _idleCallout  — NimBLE callout (one-shot timer). Created in begin(), started
     //                 in _onAuthComplete(), reset on every key input event,
     //                 stopped in _onDisconnect() / end() / beforeSleep().
-    // _pendingIdleTransition — set true by the timer callback (FreeRTOS timer
-    //                 daemon task). Checked and cleared at the top of press() /
-    //                 release() / releaseAll() on the Arduino loop task, which
-    //                 then calls _updateConnParams() safely from that context.
-    //                 This flag-based approach avoids calling NimBLE APIs from
-    //                 the timer daemon task, keeping single-core boards safe.
+    //                 Its callback runs on the NimBLE host task, so it can send
+    //                 the idle connection-parameter request directly — safe on
+    //                 single-core boards (replaces the old FreeRTOS timer + flag).
+    // _idleCalloutReady — true once _idleCallout has been initialised.
     volatile _ConnState _connState;
     volatile uint16_t   _connHandle;
-    TimerHandle_t     _idleTimer;
-    volatile bool     _pendingIdleTransition;
+    ble_npl_callout     _idleCallout;
+    bool                _idleCalloutReady;
 
     // ── User Callbacks ────────────────────────────────────────────────────
     void (*_cbPassKey)(uint32_t);
@@ -685,11 +865,16 @@ private:
     // ── Internal Helpers ──────────────────────────────────────────────────
     void    _sendKeyReport();
     void    _sendConsumerReport(uint16_t usageId);
-    void    _updateConnParams(uint16_t minInterval, uint16_t maxInterval,
+    bool    _updateConnParams(uint16_t minInterval, uint16_t maxInterval,
                               uint16_t latency, uint16_t timeout);
     void    _transitionToActive();
+    void    _markActiveRequested();
+    void    _checkActiveApplied();
     void    _startIdleTimer();
     void    _stopIdleTimer();
+    bool    _pairingWindowOpen() const;
+    void    _tapLayoutKey(uint8_t kc, uint8_t flags);
+    bool    _writeCodepoint(uint32_t cp);
     bool    _addKeycode(uint8_t keycode);
     bool    _removeKeycode(uint8_t keycode);
     bool    _isModifier(uint8_t keycode);
