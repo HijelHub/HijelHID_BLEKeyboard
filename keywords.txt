@@ -6,6 +6,8 @@
 HijelHID_BLEKeyboard	KEYWORD1
 BLEKeyboardSecurity	KEYWORD1
 HIDSecurity	KEYWORD1
+HIDPairingMode	KEYWORD1
+HIDKeyboardLayout	KEYWORD1
 HIDLogLevel	KEYWORD1
 
 # ── Methods and Functions (KEYWORD2) ─────────────────────────────────────
@@ -32,6 +34,9 @@ tap	KEYWORD2
 print	KEYWORD2
 println	KEYWORD2
 write	KEYWORD2
+setKeyboardLayout	KEYWORD2
+getKeyboardLayout	KEYWORD2
+keycodeFor	KEYWORD2
 isNumLockOn	KEYWORD2
 isCapsLockOn	KEYWORD2
 isScrollLockOn	KEYWORD2
@@ -39,9 +44,16 @@ onLEDChange	KEYWORD2
 beforeSleep	KEYWORD2
 afterWake	KEYWORD2
 setTxPower	KEYWORD2
+setConnIntervalMs	KEYWORD2
+setAppearance	KEYWORD2
 setAfterWakeTimeout	KEYWORD2
+setAfterWakeSettle	KEYWORD2
 getIdleTime	KEYWORD2
 setRandomAddress	KEYWORD2
+setPairingMode	KEYWORD2
+enterPairingMode	KEYWORD2
+exitPairingMode	KEYWORD2
+isPairing	KEYWORD2
 
 # ── Debug Levels (LITERAL1) ───────────────────────────────────────────────
 HIDLogLevel_Off	LITERAL1
@@ -55,6 +67,7 @@ HID_MAX_MANUFACTURER_LEN	LITERAL1
 # ── Security Modes (LITERAL1) ─────────────────────────────────────────────
 BLEKeyboardSecurity_JustWorks	LITERAL1
 BLEKeyboardSecurity_Passkey	LITERAL1
+HID_DEFAULT_PAIRING_WINDOW_MS	LITERAL1
 
 # ── Timing Defaults (LITERAL1) ────────────────────────────────────────────
 HID_DEFAULT_TAP_DELAY_MS	LITERAL1
@@ -67,6 +80,34 @@ HID_IDLE_THRESHOLD_MS	LITERAL1
 HID_IDLE_LATENCY	LITERAL1
 HID_CONN_INTERVAL	LITERAL1
 HID_CONN_TIMEOUT	LITERAL1
+HID_CONN_INTERVAL_MIN	LITERAL1
+HID_CONN_INTERVAL_MAX	LITERAL1
+
+# ── Keyboard Layouts (LITERAL1) ───────────────────────────────────────────
+HIDLayout_US	LITERAL1
+HIDLayout_US_International	LITERAL1
+HIDLayout_UK	LITERAL1
+HIDLayout_German	LITERAL1
+HIDLayout_French	LITERAL1
+HIDLayout_Spanish	LITERAL1
+HIDLayout_Spanish_LatAm	LITERAL1
+HIDLayout_Italian	LITERAL1
+HIDLayout_Portuguese	LITERAL1
+HIDLayout_Portuguese_Brazil	LITERAL1
+HIDLayout_UK_Mac	LITERAL1
+HIDLayout_German_Mac	LITERAL1
+HIDLayout_French_Mac	LITERAL1
+HIDLayout_Spanish_Mac	LITERAL1
+HIDLayout_Italian_Mac	LITERAL1
+HIDLayout_Portuguese_Mac	LITERAL1
+HIDLayout_Portuguese_Brazil_Mac	LITERAL1
+
+# ── Appearance (LITERAL1) ─────────────────────────────────────────────────
+APPEARANCE_HID_KEYBOARD	LITERAL1
+APPEARANCE_HID	LITERAL1
+APPEARANCE_HID_PRESENTATION_REMOTE	LITERAL1
+APPEARANCE_HID_BARCODE_SCANNER	LITERAL1
+APPEARANCE_HID_CARD_READER	LITERAL1
 
 # ── Modifier Bits (LITERAL1) ──────────────────────────────────────────────
 KEY_MOD_LCTRL	LITERAL1
